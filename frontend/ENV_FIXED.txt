@@ -1,0 +1,15 @@
+# Copy this content to your frontend/.env.local file
+# REMOVE SPACES AFTER = SIGNS!
+
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=https://shhdzqivikxagnhlhspy.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNoaGR6cWl2aWt4YWduaGxoc3B5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU2MTI1NzgsImV4cCI6MjA4MTE4ODU3OH0.ympxGREvkCjB9gUfM0ti8ky1q_KusXYTiS9u96v1PuU
+
+# Rust Backend URL
+NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
+
+# API Configuration
+USE_TEST_API=true
+NODE_ENV=development
+
+

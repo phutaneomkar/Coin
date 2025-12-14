@@ -1,0 +1,48 @@
+[package]
+name = "crypto-backend"
+version = "0.1.0"
+edition = "2021"
+default-run = "crypto-backend"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid", "rust_decimal"] }
+dotenv = "0.15"
+
+# Decimal precision for financial calculations
+rust_decimal = { version = "1.32", features = ["serde-with-str"] }
+rust_decimal_macros = "1.32"
+
+# Authentication
+jsonwebtoken = "9.2"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# HTTP client for external APIs
+reqwest = { version = "0.11", features = ["json"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+[[bin]]
+name = "test_connection"
+path = "test_connection.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+

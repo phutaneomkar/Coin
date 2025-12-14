@@ -1,0 +1,118 @@
+# Environment Variables & Secrets
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.env*.local
+.envrc
+
+# Allow .env.example files (templates)
+!.env.example
+!**/.env.example
+
+# API Keys & Credentials
+**/secrets/
+**/credentials/
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+config/secrets.json
+secrets.json
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm
+.yarn/
+.pnp.*
+.pnp
+
+# Next.js (Frontend)
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.vercel
+frontend/dist/
+frontend/.turbo
+
+# Rust (Backend)
+backend/target/
+backend/Cargo.lock
+backend/**/*.rs.bk
+backend/**/*.pdb
+*.exe
+*.dll
+*.so
+*.dylib
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+.jest/
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+.cache/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Supabase
+.supabase/
+
+# Misc
+*.bak
+*.backup
+*.old
+.cursor/
+.vercel
