@@ -40,9 +40,18 @@ async fn main() -> anyhow::Result<()> {
         me_clone.start().await;
     });
 
+    // Start Automation Engine
+    // matching_engine is Arc<MatchingEngine>, we execute (*matching_engine).clone()
+    let automation_engine = std::sync::Arc::new(crate::services::automation::AutomationEngine::new(pool.clone(), (*matching_engine).clone()));
+    let ae_clone = automation_engine.clone();
+    tokio::spawn(async move {
+        ae_clone.start().await;
+    });
+
     let state = AppState {
         pool,
         matching_engine,
+        automation_engine,
     };
 
     // Build application

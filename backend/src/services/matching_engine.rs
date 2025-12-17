@@ -15,6 +15,7 @@ use uuid::Uuid;
 pub struct MatchingEngine {
     pool: PgPool,
     orders: Arc<Mutex<HashMap<String, Vec<LimitOrder>>>>, // CoinID -> Orders
+    prices: Arc<Mutex<HashMap<String, Decimal>>>, // CoinID -> Latest Price
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +41,7 @@ impl MatchingEngine {
         Self {
             pool,
             orders: Arc::new(Mutex::new(HashMap::new())),
+            prices: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -54,6 +56,7 @@ impl MatchingEngine {
 
         // 2. Connect to Binance WebSocket
         let orders_clone = self.orders.clone();
+        let prices_clone = self.prices.clone(); // Clone for WebSocket task
         let pool_clone = self.pool.clone();
         
         tokio::spawn(async move {
@@ -80,6 +83,12 @@ impl MatchingEngine {
                                         let coin_id = symbol.replace("usdt", "");
                                         
                                         if let Ok(current_price) = ticker.c.parse::<Decimal>() {
+                                            // Update Price Store
+                                            {
+                                                let mut prices_map = prices_clone.lock().await;
+                                                prices_map.insert(coin_id.clone(), current_price);
+                                            }
+
                                             if let Some(coin_orders) = orders.get_mut(&coin_id) {
                                                 // ⚡ CRITICAL SECTION: MATCHING LOGIC
                                                 let mut executed_indices = Vec::new();
@@ -246,5 +255,10 @@ impl MatchingEngine {
             quantity,
             price,
         });
+    }
+
+    pub async fn get_prices(&self) -> HashMap<String, Decimal> {
+        let prices = self.prices.lock().await;
+        prices.clone()
     }
 }

@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Play, Pause, Square, Clock, DollarSign, Percent, Save, Hash } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { createClient } from '@/lib/supabase/client';
 
 export default function AutomationPage() {
   const [priceLimit, setPriceLimit] = useState('');
@@ -9,15 +11,79 @@ export default function AutomationPage() {
   const [hours, setHours] = useState('');
   const [minutes, setMinutes] = useState('');
   const [orderType, setOrderType] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const supabase = createClient();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log({
-      priceLimit,
-      percentage,
-      duration: { hours, minutes },
-      orderType
-    });
+  useEffect(() => {
+    fetchHistory();
+    // Refresh history every 10s
+    const interval = setInterval(fetchHistory, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchHistory = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data } = await supabase
+      .from('strategies')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (data) setHistory(data);
+  };
+
+  const handleStart = async () => {
+    if (!priceLimit || !percentage || !orderType || (!hours && !minutes)) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/automation/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          priceLimit,
+          percentage,
+          orderCount: orderType,
+          durationHours: hours || '0',
+          durationMinutes: minutes || '0'
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        toast.success('Automation Strategy Started!');
+        fetchHistory();
+        // Clear form? Maybe keep for repetition.
+      } else {
+        toast.error(data.error || 'Failed to start automation');
+      }
+    } catch (error) {
+      toast.error('Error starting automation');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleStop = async (id: string) => {
+    // TODO: Implement stop API or direct DB update if using RLS
+    const { error } = await supabase
+      .from('strategies')
+      .update({ status: 'stopped' })
+      .eq('id', id);
+
+    if (!error) {
+      toast.success('Strategy Stopped');
+      fetchHistory();
+    } else {
+      toast.error('Failed to stop');
+    }
   };
 
   return (
@@ -30,12 +96,12 @@ export default function AutomationPage() {
           Create New Strategy
         </h2>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Price Limit */}
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-2">
-                Price Limit
+                Price Limit (Amount to Invest)
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -54,7 +120,7 @@ export default function AutomationPage() {
             {/* Percentage */}
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-2">
-                Percentage
+                Profit Percentage
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -73,7 +139,7 @@ export default function AutomationPage() {
             {/* Order Type (Number) */}
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-2">
-                Order
+                Number of Orders (Iterations)
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -84,7 +150,7 @@ export default function AutomationPage() {
                   value={orderType}
                   onChange={(e) => setOrderType(e.target.value)}
                   className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg pl-10 pr-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none placeholder-gray-500 transition-colors"
-                  placeholder="Enter type number"
+                  placeholder="Enter number of trades"
                 />
               </div>
             </div>
@@ -136,10 +202,12 @@ export default function AutomationPage() {
           <div className="pt-6 border-t border-gray-700 flex gap-4">
             <button
               type="button"
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-[1.02] flex items-center justify-center gap-2"
+              onClick={handleStart}
+              disabled={isLoading}
+              className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-[1.02] flex items-center justify-center gap-2"
             >
               <Play className="w-5 h-5 fill-current" />
-              START
+              {isLoading ? 'STARTING...' : 'START'}
             </button>
             <button
               type="button"
@@ -161,49 +229,59 @@ export default function AutomationPage() {
 
       {/* History Section */}
       <div className="mt-8">
-        <h2 className="text-2xl font-bold text-white mb-6">History</h2>
+        <h2 className="text-2xl font-bold text-white mb-6">Strategy History</h2>
         <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-gray-700/50 border-b border-gray-700">
-                  <th className="px-6 py-4 text-gray-400 font-medium pb-2">Date</th>
-                  <th className="px-6 py-4 text-gray-400 font-medium pb-2">Type</th>
-                  <th className="px-6 py-4 text-gray-400 font-medium pb-2">Strategy</th>
-                  <th className="px-6 py-4 text-gray-400 font-medium pb-2">Duration</th>
+                  <th className="px-6 py-4 text-gray-400 font-medium pb-2">Started At</th>
+                  <th className="px-6 py-4 text-gray-400 font-medium pb-2">Params</th>
+                  <th className="px-6 py-4 text-gray-400 font-medium pb-2">Progress</th>
                   <th className="px-6 py-4 text-gray-400 font-medium pb-2">Status</th>
-                  <th className="px-6 py-4 text-gray-400 font-medium pb-2 text-right">Profit/Loss</th>
+                  <th className="px-6 py-4 text-gray-400 font-medium pb-2 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
-                {[1, 2, 3].map((i) => (
-                  <tr key={i} className="hover:bg-gray-700/30 transition-colors">
-                    <td className="px-6 py-4 text-gray-300">
-                      2024-03-{10 + i} 14:30
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${i % 2 === 0 ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'
-                        }`}>
-                        {i % 2 === 0 ? 'BUY' : 'SELL'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-300">
-                      Limit: $1.9{i} | 5%
-                    </td>
-                    <td className="px-6 py-4 text-gray-300">
-                      4h 30m
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="flex items-center text-green-400 gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>
-                        Completed
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right font-mono text-green-400">
-                      +$12{i}.50
+                {history.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                      No strategies found. Start one above!
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  history.map((strategy) => (
+                    <tr key={strategy.id} className="hover:bg-gray-700/30 transition-colors">
+                      <td className="px-6 py-4 text-gray-300">
+                        {new Date(strategy.start_time).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 text-gray-300">
+                        Invest: ${strategy.amount} | Target: {strategy.profit_percentage}%
+                      </td>
+                      <td className="px-6 py-4 text-gray-300">
+                        {strategy.iterations_completed} / {strategy.total_iterations} Iterations
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${strategy.status === 'running' ? 'bg-green-900/50 text-green-400' :
+                            strategy.status === 'completed' ? 'bg-blue-900/50 text-blue-400' :
+                              'bg-red-900/50 text-red-400'
+                          }`}>
+                          {strategy.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {strategy.status === 'running' && (
+                          <button
+                            onClick={() => handleStop(strategy.id)}
+                            className="text-red-400 hover:text-red-300 text-sm font-medium"
+                          >
+                            Stop
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
