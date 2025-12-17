@@ -12,7 +12,7 @@ export async function GET() {
   try {
     // Fetch all 24hr tickers from Binance
     const tickers = await fetchBinanceTickers();
-    
+
     // Filter only USDT pairs and convert to our format
     // Include ALL USDT pairs, not just mapped ones
     const prices: CryptoPrice[] = tickers
@@ -21,7 +21,7 @@ export async function GET() {
         // Try to get coin ID from mapping first, otherwise generate from symbol
         let coinId = getCoinIdFromSymbol(ticker.symbol);
         const symbol = ticker.symbol.replace('USDT', '');
-        
+
         // If not in mapping, create coin ID from symbol (lowercase)
         if (!coinId) {
           coinId = symbol.toLowerCase();
@@ -56,20 +56,20 @@ export async function GET() {
     return NextResponse.json(prices, {
       status: 200,
       headers: {
-        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120', // Cache for 1 minute
+        'Cache-Control': 'public, s-maxage=1, stale-while-revalidate=1', // Cache for 1 second
         'Content-Type': 'application/json',
       },
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to fetch crypto prices',
-        details: errorMessage.includes('Binance') 
+        details: errorMessage.includes('Binance')
           ? errorMessage
           : 'Unable to fetch prices. Please try again later.'
       },
-      { 
+      {
         status: 500,
         headers: {
           'Content-Type': 'application/json',

@@ -12,9 +12,11 @@ mod handlers;
 mod models;
 mod services;
 mod utils;
+mod state;
 
 use config::Config;
 use database::Database;
+use state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -31,6 +33,18 @@ async fn main() -> anyhow::Result<()> {
     let db = Database::new(&config.database_url).await?;
     let pool = db.pool().clone();
 
+    // 🚀 Start High-Performance Matching Engine
+    let matching_engine = std::sync::Arc::new(services::matching_engine::MatchingEngine::new(pool.clone()));
+    let me_clone = matching_engine.clone();
+    tokio::spawn(async move {
+        me_clone.start().await;
+    });
+
+    let state = AppState {
+        pool,
+        matching_engine,
+    };
+
     // Build application
     let app = Router::new()
         .route("/health", get(health_check))
@@ -43,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/orders/process", post(handlers::orders::process_order))
         .route("/api/calculations/profit-loss", post(handlers::calculations::calculate_profit_loss))
         .route("/api/calculations/portfolio-value", post(handlers::calculations::calculate_portfolio_value))
-        .with_state(pool)
+        .with_state(state) // Pass the entire AppState
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

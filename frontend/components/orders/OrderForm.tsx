@@ -24,6 +24,7 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
   const [userHoldings, setUserHoldings] = useState<number | null>(null);
   const supabase = createClient();
   const { prices } = usePriceStore();
+  const currentPrice = prices[coinId]?.current_price || 0;
 
   // Read URL params to pre-fill form
   useEffect(() => {
@@ -39,7 +40,7 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
     }
   }, [searchParams]);
 
-  // Fetch user balance and holdings
+  // Fetch user balance and holdings, accounting for locked funds/assets
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -49,16 +50,14 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
 
         if (!user) return;
 
-        // Fetch balance
+        // Fetch profile (balance)
         const { data: profile } = await supabase
           .from('profiles')
           .select('balance_inr')
           .eq('id', user.id)
           .single();
 
-        if (profile) {
-          setUserBalance(profile.balance_inr);
-        }
+        let rawBalance = profile?.balance_inr || 0;
 
         // Fetch holdings for this coin
         const { data: holding } = await supabase
@@ -68,20 +67,51 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
           .eq('coin_id', coinId)
           .single();
 
-        if (holding) {
-          setUserHoldings(holding.quantity);
+        let rawHoldings = holding?.quantity || 0;
+
+        // Fetch PENDING orders to calculate locked amounts
+        const { data: pendingOrders } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('order_status', 'pending');
+
+        let lockedBalance = 0;
+        let lockedHoldings = 0;
+
+        if (pendingOrders) {
+          pendingOrders.forEach(order => {
+            if (order.order_type === 'buy') {
+              // Lock balance for buy orders
+              // For limit orders: price * quantity
+              // For market orders (if any pending): estimated total
+              const p = order.price_per_unit || currentPrice;
+              const amt = (p * order.quantity) * 1.001; // Include 0.1% fee
+              lockedBalance += amt;
+            } else if (order.order_type === 'sell') {
+              // Lock holdings for sell orders
+              // Only if it matches the current coin
+              if (order.coin_id === coinId) {
+                lockedHoldings += order.quantity;
+              }
+            }
+          });
         }
+
+        // Update state with AVAILABLE amounts
+        setUserBalance(Math.max(0, rawBalance - lockedBalance));
+        setUserHoldings(Math.max(0, rawHoldings - lockedHoldings));
+
       } catch (error) {
-        // Silently fail - user data not critical for form
+        console.error('Error fetching user data:', error);
       }
     };
 
     if (coinId) {
       fetchUserData();
     }
-  }, [coinId, supabase]);
+  }, [coinId, supabase, currentPrice]);
 
-  const currentPrice = prices[coinId]?.current_price || 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -189,7 +219,7 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
       const result = await response.json();
 
       if (!response.ok) {
-        const errorMessage = result.details 
+        const errorMessage = result.details
           ? `${result.error}: ${result.details}`
           : result.error || 'Failed to place order';
         throw new Error(errorMessage);
@@ -210,42 +240,108 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
     }
   };
 
+  // Calculate available amount based on order type
+  const getAvailableAmount = () => {
+    if (orderType === 'buy') {
+      return userBalance || 0;
+    } else {
+      return userHoldings || 0;
+    }
+  };
+
+  // Quick percentage buttons (25%, 50%, 75%, 100%)
+  const handlePercentageClick = (percentage: number) => {
+    const available = getAvailableAmount();
+    const priceToUse = orderMode === 'limit' && price ? parseFloat(price) : currentPrice;
+
+    if (priceToUse <= 0) return;
+
+    if (orderType === 'buy') {
+      // For buy: calculate quantity based on available balance
+      // quantity = (balance * percentage) / price
+      const maxQuantity = (available / priceToUse) * (percentage / 100);
+      setQuantity(maxQuantity.toFixed(8).replace(/\.?0+$/, ''));
+    } else if (orderType === 'sell') {
+      // For sell: use available holdings directly
+      const sellQuantity = available * (percentage / 100);
+      setQuantity(sellQuantity.toFixed(8).replace(/\.?0+$/, ''));
+    }
+  };
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    }).format(price);
+  };
+
   const popularCoins = Object.values(prices).slice(0, 10);
+
+  // Calculate estimated totals
+  const TAX_RATE = 0.001; // 0.1% trading fee
+  const priceVal = orderMode === 'limit' && price ? parseFloat(price) : currentPrice;
+  const quantityVal = parseFloat(quantity) || 0;
+  const baseAmount = quantityVal * priceVal;
+  const taxAmount = baseAmount * TAX_RATE;
+  const estimatedTotal = baseAmount + taxAmount;
 
   return (
     <div className="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700">
       <h2 className="text-xl font-semibold text-white mb-6">Place Order</h2>
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-6">
+
+        {/* Order Type & Balance Header */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Order Type
-          </label>
-          <div className="flex gap-2">
+          <div className="flex gap-2 mb-4">
             <button
               type="button"
               onClick={() => setOrderType('buy')}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                orderType === 'buy'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
+              className={`flex-1 py-3 px-4 rounded-lg font-semibold text-lg transition-all ${orderType === 'buy'
+                ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
+                : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                }`}
             >
-              Buy
+              BUY
             </button>
             <button
               type="button"
               onClick={() => setOrderType('sell')}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                orderType === 'sell'
-                  ? 'bg-red-600 text-white'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
+              className={`flex-1 py-3 px-4 rounded-lg font-semibold text-lg transition-all ${orderType === 'sell'
+                ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
+                : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                }`}
             >
-              Sell
+              SELL
             </button>
+          </div>
+
+          {/* Available Balance/Holdings Display */}
+          <div className={`p-4 rounded-lg mb-4 border-2 ${orderType === 'buy'
+            ? 'bg-green-900/20 border-green-700/50'
+            : 'bg-red-900/20 border-red-700/50'
+            }`}>
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-400">
+                {orderType === 'buy' ? 'Available Balance' : 'Available Holdings'}
+              </span>
+              <span className={`text-xl font-bold ${orderType === 'buy' ? 'text-green-400' : 'text-red-400'
+                }`}>
+                {orderType === 'buy'
+                  ? userBalance !== null
+                    ? `$${(userBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : 'Loading...'
+                  : userHoldings !== null
+                    ? `${(userHoldings || 0).toLocaleString('en-US', { maximumFractionDigits: 8 })}`
+                    : 'Loading...'
+                }
+              </span>
+            </div>
           </div>
         </div>
 
+        {/* Cryptocurrency Selection */}
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Cryptocurrency
@@ -253,7 +349,7 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
           <select
             value={coinId}
             onChange={(e) => setCoinId(e.target.value)}
-            className="w-full px-4 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-4 py-3 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
           >
             {popularCoins.map((coin) => (
               <option key={coin.id} value={coin.id} className="bg-gray-700">
@@ -262,42 +358,42 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
             ))}
           </select>
           {currentPrice > 0 && (
-            <p className="mt-1 text-sm text-white">
-              Current Price: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
+            <div className="mt-2 flex justify-between items-center bg-gray-700/50 p-3 rounded-lg border border-gray-600">
+              <span className="text-sm text-gray-400">Current Market Price</span>
+              <span className="text-lg font-bold text-white">
+                ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
           )}
         </div>
 
+        {/* Order Mode Tabs */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Order Mode
-          </label>
-          <div className="flex gap-2">
+          <div className="flex gap-2 bg-gray-700 p-1 rounded-lg">
             <button
               type="button"
               onClick={() => setOrderMode('market')}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                orderMode === 'market'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
+              className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${orderMode === 'market'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-gray-400 hover:text-white'
+                }`}
             >
               Market
             </button>
             <button
               type="button"
               onClick={() => setOrderMode('limit')}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                orderMode === 'limit'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
+              className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${orderMode === 'limit'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-gray-400 hover:text-white'
+                }`}
             >
               Limit
             </button>
           </div>
         </div>
 
+        {/* Quantity Input */}
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Quantity
@@ -307,129 +403,113 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
             value={quantity}
             onChange={(e) => {
               const value = e.target.value;
-              // Allow only numbers and decimal point
               if (value === '' || /^\d*\.?\d*$/.test(value)) {
                 setQuantity(value);
-                // Don't auto-fill price - let user set it manually for limit orders
               }
             }}
             required
-            className="w-full px-4 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400"
+            className="w-full px-4 py-3 bg-gray-700 border-2 border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400 text-lg font-medium"
             placeholder="0.00"
           />
-          {orderMode === 'limit' && !price && currentPrice > 0 && (
-            <p className="mt-1 text-xs text-gray-400">
-              Tip: Enter limit price to set your desired execution price
-            </p>
-          )}
+
+          {/* Percentage Buttons */}
+          <div className="flex gap-2 mt-2">
+            {[25, 50, 75, 100].map((percent) => (
+              <button
+                key={percent}
+                type="button"
+                onClick={() => handlePercentageClick(percent)}
+                className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors ${orderType === 'buy'
+                  ? 'bg-green-900/30 text-green-400 hover:bg-green-900/50 border border-green-700/50'
+                  : 'bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-700/50'
+                  }`}
+              >
+                {percent}%
+              </button>
+            ))}
+          </div>
         </div>
 
+        {/* Limit Price Input */}
         {orderMode === 'limit' && (
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Limit Price ($)
-            </label>
-              <input
-                type="text"
-                value={price}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  // Allow only numbers and decimal point
-                  if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                    setPrice(value);
-                    // Don't auto-calculate quantity when price changes
-                    // Let user enter quantity manually
-                  }
-                }}
-                required
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400"
-                placeholder="0.00"
-              />
-            {currentPrice > 0 && (
-              <div className="mt-2 space-y-1">
-                <p className="text-xs text-gray-400">
-                  Current Market Price: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-                {price && parseFloat(price) > 0 && (
-                  <>
-                    <p className={`text-xs ${
-                      parseFloat(price) > currentPrice 
-                        ? 'text-green-400' 
-                        : parseFloat(price) < currentPrice 
-                        ? 'text-red-400' 
-                        : 'text-gray-400'
-                    }`}>
-                      {parseFloat(price) > currentPrice 
-                        ? `Above market by $${(parseFloat(price) - currentPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
-                        : parseFloat(price) < currentPrice 
-                        ? `Below market by $${(currentPrice - parseFloat(price)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
-                        : 'At market price'}
-                    </p>
-                    <p className="text-xs text-blue-400 mt-1">
-                      {orderType === 'buy' 
-                        ? `Buy order will execute when price drops to $${parseFloat(price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} or below`
-                        : `Sell order will execute when price rises to $${parseFloat(price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} or above`}
-                    </p>
-                    {orderType === 'buy' && parseFloat(price) >= currentPrice && (
-                      <p className="text-xs text-yellow-400 mt-1">
-                        ⚠️ Limit price is above current market price. Order will execute when price drops.
-                      </p>
-                    )}
-                    {orderType === 'sell' && parseFloat(price) <= currentPrice && (
-                      <p className="text-xs text-yellow-400 mt-1">
-                        ⚠️ Limit price is below current market price. Order will execute when price rises.
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-sm font-medium text-gray-300">
+                Limit Price ($)
+              </label>
+              {currentPrice > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPrice(currentPrice.toFixed(2))}
+                  className="text-xs text-blue-400 hover:text-blue-300"
+                >
+                  Use Market Price
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              value={price}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                  setPrice(value);
+                }
+              }}
+              required
+              className="w-full px-4 py-3 bg-gray-700 border-2 border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400 text-lg font-medium"
+              placeholder="0.00"
+            />
+            {price && parseFloat(price) > 0 && currentPrice > 0 && (
+              <p className={`text-xs mt-1 ${parseFloat(price) > currentPrice
+                ? 'text-green-400'
+                : parseFloat(price) < currentPrice
+                  ? 'text-red-400'
+                  : 'text-gray-400'
+                }`}>
+                {Math.abs((parseFloat(price) - currentPrice) / currentPrice * 100).toFixed(2)}% {parseFloat(price) > currentPrice ? 'above' : 'below'} market
+              </p>
             )}
           </div>
         )}
 
-        {quantity && currentPrice > 0 && (() => {
-          const TAX_RATE = 0.001; // 0.1% trading fee
-          const baseAmount = parseFloat(quantity) * (orderMode === 'limit' && price ? parseFloat(price) : currentPrice);
-          const taxAmount = baseAmount * TAX_RATE;
-          const estimatedTotal = baseAmount + taxAmount;
-          
-          const formatPrice = (amount: number) => {
-            return new Intl.NumberFormat('en-US', {
-              style: 'currency',
-              currency: 'USD',
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            }).format(amount);
-          };
-
-          return (
-            <div className="bg-gray-700 p-4 rounded-lg border border-gray-600 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-300">Subtotal:</span>
-                <span className="text-white">{formatPrice(baseAmount)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-300">Trading Fee (0.1%):</span>
-                <span className="text-white">{formatPrice(taxAmount)}</span>
-              </div>
-              <div className="flex justify-between text-sm pt-2 border-t border-gray-600">
-                <span className="text-gray-300 font-medium">Total:</span>
-                <span className="text-white font-semibold text-lg">
-                  {formatPrice(estimatedTotal)}
-                </span>
-              </div>
+        {/* Estimated Total */}
+        {quantityVal > 0 && priceVal > 0 && (
+          <div className={`p-4 rounded-lg border-2 space-y-3 ${orderType === 'buy'
+            ? 'bg-green-900/10 border-green-700/50'
+            : 'bg-red-900/10 border-red-700/50'
+            }`}>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">
+                {orderType === 'buy' ? 'You Pay' : 'You Receive'}
+              </span>
+              <span className={`font-semibold text-lg ${orderType === 'buy' ? 'text-green-400' : 'text-red-400'
+                }`}>
+                {orderType === 'buy'
+                  ? formatPrice(estimatedTotal)
+                  : formatPrice(baseAmount - taxAmount)
+                }
+              </span>
             </div>
-          );
-        })()}
+            <div className="flex justify-between text-xs text-gray-500 pt-2 border-t border-gray-700">
+              <span>Subtotal:</span>
+              <span>{formatPrice(baseAmount)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>Trading Fee (0.1%):</span>
+              <span>{formatPrice(taxAmount)}</span>
+            </div>
+          </div>
+        )}
 
+        {/* Submit Button */}
         <button
           type="submit"
-          disabled={isLoading}
-          className={`w-full py-2 px-4 rounded-lg font-medium text-white ${
-            orderType === 'buy'
-              ? 'bg-green-600 hover:bg-green-700'
-              : 'bg-red-600 hover:bg-red-700'
-          } disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center`}
+          disabled={isLoading || quantityVal <= 0 || (orderMode === 'limit' && (!price || parseFloat(price) <= 0))}
+          className={`w-full py-4 px-4 rounded-lg font-bold text-lg text-white shadow-lg transition-all ${orderType === 'buy'
+            ? 'bg-green-600 hover:bg-green-700 shadow-green-600/30'
+            : 'bg-red-600 hover:bg-red-700 shadow-red-600/30'
+            } disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center`}
         >
           {isLoading ? <LoadingSpinner size="sm" /> : `Place ${orderType.toUpperCase()} Order`}
         </button>

@@ -8,6 +8,7 @@ import { WatchlistItem, CryptoPrice } from '@/types';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Plus, X, Search, TrendingUp, TrendingDown, ArrowUpDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { useCryptoPrices } from '@/hooks/useCryptoPrices';
 
 type SortField = 'name' | 'price' | 'change';
 type SortDirection = 'asc' | 'desc';
@@ -22,6 +23,7 @@ export default function WatchlistPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const supabase = createClient();
   const { prices } = usePriceStore();
+  useCryptoPrices();
 
   useEffect(() => {
     fetchWatchlist();
@@ -38,75 +40,68 @@ export default function WatchlistPage() {
 
       if (missingCoins.length === 0) return;
 
-      // Fetch prices for missing coins (with delay to avoid rate limits)
-      for (let i = 0; i < missingCoins.length; i++) {
-        const item = missingCoins[i];
-        
-        // Add delay between requests
-        if (i > 0) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
+      // Fetch prices for missing coins with batched concurrency
+      const batchSize = 10;
+      for (let i = 0; i < missingCoins.length; i += batchSize) {
+        const batch = missingCoins.slice(i, i + batchSize);
+        await Promise.allSettled(
+          batch.map(async (item) => {
+            try {
+              if (item.coin_id.toLowerCase() === 'tether' || item.coin_id.toLowerCase() === 'usdt') {
+                const { setPrice } = usePriceStore.getState();
+                const usdtPrice: CryptoPrice = {
+                  id: item.coin_id,
+                  symbol: 'USDT',
+                  name: 'Tether',
+                  current_price: 1.0,
+                  price_change_24h: 0,
+                  price_change_percentage_24h: 0,
+                  market_cap: 0,
+                  volume_24h: 0,
+                  last_updated: new Date().toISOString(),
+                };
+                setPrice(usdtPrice);
+                return;
+              }
 
-        try {
-          // Special handling for USDT (stablecoin)
-          if (item.coin_id.toLowerCase() === 'tether' || item.coin_id.toLowerCase() === 'usdt') {
-            const { setPrice } = usePriceStore.getState();
-            const usdtPrice: CryptoPrice = {
-              id: item.coin_id,
-              symbol: 'USDT',
-              name: 'Tether',
-              current_price: 1.00, // USDT is pegged to $1
-              price_change_24h: 0,
-              price_change_percentage_24h: 0,
-              market_cap: 0,
-              volume_24h: 0,
-              last_updated: new Date().toISOString(),
-            };
-            setPrice(usdtPrice);
-            continue;
-          }
-
-          const response = await fetch(
-            `/api/crypto/coin-detail?coinId=${encodeURIComponent(item.coin_id)}`
-          );
-
-          if (response.ok) {
-            const coinDetail = await response.json();
-            
-            // Convert CoinDetail to CryptoPrice format
-            const cryptoPrice: CryptoPrice = {
-              id: coinDetail.id,
-              symbol: coinDetail.symbol,
-              name: coinDetail.name,
-              current_price: coinDetail.current_price,
-              price_change_24h: coinDetail.price_change_24h,
-              price_change_percentage_24h: coinDetail.price_change_percentage_24h,
-              market_cap: coinDetail.market_cap || 0,
-              volume_24h: coinDetail.volume_24h,
-              last_updated: coinDetail.last_updated,
-            };
-
-            // Update the price store
-            const { setPrice } = usePriceStore.getState();
-            setPrice(cryptoPrice);
-          } else if (response.status === 404) {
-            // Coin not supported on Binance - set a placeholder price
-            const { setPrice } = usePriceStore.getState();
-            const placeholderPrice: CryptoPrice = {
-              id: item.coin_id,
-              symbol: item.coin_symbol,
-              name: item.coin_id,
-              current_price: 0,
-              price_change_24h: 0,
-              price_change_percentage_24h: 0,
-              market_cap: 0,
-              volume_24h: 0,
-              last_updated: new Date().toISOString(),
-            };
-            setPrice(placeholderPrice);
-          }
-        } catch (error) {
-          console.error(`Failed to fetch price for ${item.coin_id}:`, error);
+              const response = await fetch(`/api/crypto/coin-detail?coinId=${encodeURIComponent(item.coin_id)}`);
+              if (response.ok) {
+                const coinDetail = await response.json();
+                const cryptoPrice: CryptoPrice = {
+                  id: coinDetail.id,
+                  symbol: coinDetail.symbol,
+                  name: coinDetail.name,
+                  current_price: coinDetail.current_price,
+                  price_change_24h: coinDetail.price_change_24h,
+                  price_change_percentage_24h: coinDetail.price_change_percentage_24h,
+                  market_cap: coinDetail.market_cap || 0,
+                  volume_24h: coinDetail.volume_24h,
+                  last_updated: coinDetail.last_updated,
+                };
+                const { setPrice } = usePriceStore.getState();
+                setPrice(cryptoPrice);
+              } else if (response.status === 404) {
+                const { setPrice } = usePriceStore.getState();
+                const placeholderPrice: CryptoPrice = {
+                  id: item.coin_id,
+                  symbol: item.coin_symbol,
+                  name: item.coin_id,
+                  current_price: 0,
+                  price_change_24h: 0,
+                  price_change_percentage_24h: 0,
+                  market_cap: 0,
+                  volume_24h: 0,
+                  last_updated: new Date().toISOString(),
+                };
+                setPrice(placeholderPrice);
+              }
+            } catch (error) {
+              console.error(`Failed to fetch price for ${item.coin_id}:`, error);
+            }
+          })
+        );
+        if (i + batchSize < missingCoins.length) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
         }
       }
     };
@@ -472,4 +467,3 @@ export default function WatchlistPage() {
     </div>
   );
 }
-

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { TradingModal } from './TradingModal';
 
 interface CoinDetail {
@@ -15,6 +16,7 @@ interface TradingButtonsProps {
 }
 
 export function TradingButtons({ coin }: TradingButtonsProps) {
+  const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [orderType, setOrderType] = useState<'buy' | 'sell'>('buy');
 
@@ -47,12 +49,16 @@ export function TradingButtons({ coin }: TradingButtonsProps) {
 
       <TradingModal
         isOpen={isModalOpen}
+        onOrderPlaced={async () => {
+          setIsModalOpen(false);
+          router.push('/orders?tab=portfolio');
+          window.dispatchEvent(new CustomEvent('order-placed'));
+        }}
         onClose={() => setIsModalOpen(false)}
         coinId={coin.id}
         coinSymbol={coin.symbol}
         currentPrice={coin.current_price}
         orderType={orderType}
-        onOrderPlaced={() => setIsModalOpen(false)}
       />
     </>
   );

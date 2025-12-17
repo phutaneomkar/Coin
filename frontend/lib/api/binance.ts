@@ -162,14 +162,14 @@ const BINANCE_SYMBOL_TO_COIN: Record<string, string> = Object.fromEntries(
  * If not in mapping, generate symbol dynamically (e.g., "kda" -> "KDAUSDT")
  */
 export function getBinanceSymbol(coinId: string): string | null {
-  const lowerCoinId = coinId.toLowerCase();
-  
+  const lowerCoinId = coinId.trim().toLowerCase();
+
   // First check the mapping
   const mapped = COIN_TO_BINANCE_SYMBOL[lowerCoinId];
   if (mapped) {
     return mapped;
   }
-  
+
   // If not in mapping, generate symbol dynamically
   // Remove hyphens and convert to uppercase, then append USDT
   const symbol = lowerCoinId.replace(/-/g, '').toUpperCase() + 'USDT';
@@ -197,7 +197,7 @@ export function getCoinIdFromSymbol(symbol: string): string | null {
  */
 export async function fetchBinanceTickers(): Promise<BinanceTicker[]> {
   const response = await fetch(`${BINANCE_API_BASE}/v3/ticker/24hr`, {
-    next: { revalidate: 60 }, // Cache for 1 minute
+    next: { revalidate: 1 }, // Cache for 1 second (effectively real-time)
   });
 
   if (!response.ok) {
@@ -231,7 +231,7 @@ export async function fetchBinanceExchangeInfo(): Promise<{
  */
 export async function fetchBinanceTicker(symbol: string): Promise<BinanceTicker> {
   const response = await fetch(`${BINANCE_API_BASE}/v3/ticker/24hr?symbol=${symbol}`, {
-    next: { revalidate: 30 }, // Cache for 30 seconds
+    next: { revalidate: 1 }, // Cache for 1 second (real-time)
   });
 
   if (!response.ok) {
@@ -255,7 +255,7 @@ export async function fetchBinanceKlines(
   endTime?: number
 ): Promise<BinanceKline[]> {
   let url = `${BINANCE_API_BASE}/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-  
+
   if (startTime) {
     url += `&startTime=${startTime}`;
   }
@@ -264,7 +264,7 @@ export async function fetchBinanceKlines(
   }
 
   const response = await fetch(url, {
-    next: { revalidate: 30 }, // Cache for 30 seconds
+    next: { revalidate: 5 }, // Cache for 5 seconds
   });
 
   if (!response.ok) {
@@ -327,7 +327,7 @@ export async function fetchBinanceOrderBook(
   limit: number = 20
 ): Promise<BinanceOrderBook> {
   const response = await fetch(`${BINANCE_API_BASE}/v3/depth?symbol=${symbol}&limit=${limit}`, {
-    next: { revalidate: 3 }, // Cache for 3 seconds (order book changes frequently)
+    next: { revalidate: 1 }, // Cache for 1 second (order book changes frequently)
   });
 
   if (!response.ok) {
@@ -355,7 +355,7 @@ export async function fetchBinanceRecentTrades(
   limit: number = 50
 ): Promise<BinanceRecentTrade[]> {
   const response = await fetch(`${BINANCE_API_BASE}/v3/trades?symbol=${symbol}&limit=${limit}`, {
-    next: { revalidate: 3 }, // Cache for 3 seconds
+    next: { revalidate: 1 },
   });
 
   if (!response.ok) {

@@ -191,8 +191,14 @@ CREATE POLICY "Users can view own transactions" ON transactions
 CREATE POLICY "Users can view own holdings" ON holdings
   FOR SELECT USING (auth.uid() = user_id);
 
+CREATE POLICY "Users can insert own holdings" ON holdings
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
 CREATE POLICY "Users can update own holdings" ON holdings
   FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own holdings" ON holdings
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- Automation scripts policies
 CREATE POLICY "Users can view own scripts" ON automation_scripts

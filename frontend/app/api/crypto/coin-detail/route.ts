@@ -28,7 +28,29 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch ticker data from Binance
-    const ticker = await fetchBinanceTicker(binanceSymbol);
+    let ticker;
+    try {
+      ticker = await fetchBinanceTicker(binanceSymbol);
+    } catch (tickerError) {
+      // If symbol is invalid (400 error), return 404 instead of 500
+      const errorMsg = tickerError instanceof Error ? tickerError.message : 'Unknown error';
+      if (errorMsg.includes('Invalid symbol') || errorMsg.includes('400')) {
+        return NextResponse.json(
+          { error: 'Coin not found', details: `Trading pair ${binanceSymbol} is not available on Binance.` },
+          { status: 404 }
+        );
+      }
+      // Re-throw other errors to be handled by outer catch
+      throw tickerError;
+    }
+
+    // Validate ticker data exists
+    if (!ticker || !ticker.lastPrice) {
+      return NextResponse.json(
+        { error: 'Coin not found', details: `No data available for ${binanceSymbol} on Binance.` },
+        { status: 404 }
+      );
+    }
 
     // Convert Binance ticker to our CoinDetail format
     const currentPrice = parseFloat(ticker.lastPrice) || 0;
@@ -50,7 +72,7 @@ export async function GET(request: NextRequest) {
       volume_24h: volume24h,
       high_24h: high24h,
       low_24h: low24h,
-      last_updated: new Date(ticker.closeTime).toISOString(),
+      last_updated: new Date(ticker.closeTime || Date.now()).toISOString(),
     };
 
     return NextResponse.json(detail, {

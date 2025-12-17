@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { fetchBinanceTicker, getBinanceSymbol } from '@/lib/api/binance';
 
+
 const TRADING_FEE_RATE = 0.001; // 0.1% trading fee
 
 /**
@@ -203,14 +204,19 @@ export async function GET(request: NextRequest) {
 
     let executedCount = 0;
     const errors: string[] = [];
+    const logs: string[] = []; // Collect logs to return to client for debugging
 
     // Check each pending order
     for (const order of pendingOrders) {
       try {
+        const coinId = (order.coin_id || '').trim();
+
         // Get current market price
-        const binanceSymbol = getBinanceSymbol(order.coin_id);
+        const binanceSymbol = getBinanceSymbol(coinId);
         if (!binanceSymbol) {
-          errors.push(`Coin ${order.coin_id} not supported on Binance`);
+          const msg = `Coin ${coinId} not supported on Binance (Symbol not found)`;
+          errors.push(msg);
+          logs.push(msg);
           continue;
         }
 
@@ -219,35 +225,44 @@ export async function GET(request: NextRequest) {
         const limitPrice = parseFloat(order.price_per_unit) || 0;
 
         if (currentPrice <= 0 || limitPrice <= 0) {
-          console.log(`Skipping order ${order.id}: Invalid prices - current: ${currentPrice}, limit: ${limitPrice}`);
+          const msg = `Skipping order ${order.id}: Invalid prices - current: ${currentPrice}, limit: ${limitPrice}`;
+          console.log(msg);
+          logs.push(msg);
           continue;
         }
 
-        // Check if price condition is met
+        // Check if limit condition is met
         let shouldExecute = false;
+        let reason = '';
 
+        // Ensure we're comparing numbers
         if (order.order_type === 'buy') {
-          // Buy limit: execute when current price drops to or below limit price
-          // Example: Market $100, Limit $95 -> Execute when price hits $95 or below
-          // Logic: If market is $100 and limit is $95, wait for price to drop to $95
           shouldExecute = currentPrice <= limitPrice;
-          console.log(`Buy limit order ${order.id}: Current=${currentPrice}, Limit=${limitPrice}, Execute=${shouldExecute}`);
+          reason = `BUY ${coinId}: Current($${currentPrice}) <= Limit($${limitPrice}) is ${shouldExecute}`;
         } else if (order.order_type === 'sell') {
-          // Sell limit: execute when current price rises to or above limit price
-          // Example: Market $100, Limit $105 -> Execute when price hits $105 or above
-          // Logic: If market is $100 and limit is $105, wait for price to rise to $105
           shouldExecute = currentPrice >= limitPrice;
-          console.log(`Sell limit order ${order.id}: Current=${currentPrice}, Limit=${limitPrice}, Execute=${shouldExecute}`);
+          reason = `SELL ${coinId}: Current($${currentPrice}) >= Limit($${limitPrice}) is ${shouldExecute}`;
         }
+
+        logs.push(`Order ${order.id}: ${reason}`);
 
         if (shouldExecute) {
           console.log(`Executing ${order.order_type} limit order ${order.id} at price ${currentPrice}`);
-          
+          logs.push(`>> Triggering execution for #${order.id}`);
+
           // Update order with execution price (use current market price, not limit price)
           const executionPrice = currentPrice;
           const totalAmount = executionPrice * order.quantity;
 
-          // Update order total amount with actual execution price
+          // Execute the order FIRST (update balance/holdings)
+          // If this fails, the order status check logic will catch it and NOT mark it as completed
+          await executeOrder(supabase, order.user_id, {
+            ...order,
+            price_per_unit: executionPrice,
+            total_amount: totalAmount,
+          }, executionPrice);
+
+          // IF execution successful, THEN update order status
           const { error: updateError } = await supabase
             .from('orders')
             .update({
@@ -259,22 +274,17 @@ export async function GET(request: NextRequest) {
             .eq('id', order.id);
 
           if (updateError) {
-            throw new Error(`Failed to update order: ${updateError.message}`);
+            console.error(`Failed to update order status ${order.id}`, updateError);
+            logs.push(`Failed to update status for ${order.id}: ${updateError.message}`);
+          } else {
+            executedCount++;
+            logs.push(`Successfully executed order ${order.id}`);
           }
-
-          // Execute the order (update balance/holdings)
-          await executeOrder(supabase, order.user_id, {
-            ...order,
-            price_per_unit: executionPrice,
-            total_amount: totalAmount,
-          }, executionPrice);
-
-          executedCount++;
-          console.log(`Successfully executed order ${order.id}`);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         errors.push(`Order ${order.id}: ${errorMessage}`);
+        logs.push(`Error executing ${order.id}: ${errorMessage}`);
         console.error(`Error processing order ${order.id}:`, error);
       }
     }
@@ -284,6 +294,7 @@ export async function GET(request: NextRequest) {
       message: `Processed ${pendingOrders.length} pending orders`,
       executed: executedCount,
       errors: errors.length > 0 ? errors : undefined,
+      logs: logs // Return logs for debugging
     });
   } catch (error) {
     console.error('Error checking limit orders:', error);

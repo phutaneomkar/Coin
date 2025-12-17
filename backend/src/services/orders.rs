@@ -15,7 +15,7 @@ pub async fn validate_order(
     if request.order_type == "buy" {
         // Check balance
         let balance: Option<Decimal> = sqlx::query_scalar(
-            "SELECT balance_inr FROM profiles WHERE id = $1"
+            "SELECT balance_inr FROM profiles WHERE id = $1::uuid"
         )
         .bind(&request.user_id)
         .fetch_optional(pool)
@@ -39,7 +39,7 @@ pub async fn validate_order(
     } else if request.order_type == "sell" {
         // Check holdings
         let holding: Option<(Decimal,)> = sqlx::query_as(
-            "SELECT quantity FROM holdings WHERE user_id = $1 AND coin_id = $2"
+            "SELECT quantity FROM holdings WHERE user_id = $1::uuid AND coin_id = $2"
         )
         .bind(&request.user_id)
         .bind(&request.coin_id)

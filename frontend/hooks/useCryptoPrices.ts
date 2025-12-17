@@ -9,14 +9,19 @@ export function useCryptoPrices() {
 
     const loadPrices = async () => {
       if (!isMounted) return;
-      
+
       setLoading(true);
       setError(null);
 
       try {
         // Use the new Binance-based API route
+        // Disable cache for real-time updates
         const response = await fetch('/api/crypto/prices', {
-          next: { revalidate: 60 }, // Cache for 1 minute
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          }
         });
 
         if (!response.ok) {
@@ -44,8 +49,8 @@ export function useCryptoPrices() {
     // Load prices immediately
     loadPrices();
 
-    // Set up interval to refresh prices every 2 minutes
-    const interval = setInterval(loadPrices, 120000); // 2 minutes = 120000ms
+    // Set up interval to refresh prices every 1 second (1000ms)
+    const interval = setInterval(loadPrices, 1000);
 
     return () => {
       isMounted = false;
