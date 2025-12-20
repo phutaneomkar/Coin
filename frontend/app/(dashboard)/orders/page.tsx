@@ -553,99 +553,6 @@ function OrdersContent() {
             Holdings: <span className="text-white font-semibold">{Object.keys(holdingsData).length} coins</span>
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={async () => {
-              // Prevent concurrent syncs
-              if (isSyncingRef.current) {
-                toast.error('Sync already in progress. Please wait.');
-                return;
-              }
-
-              try {
-                isSyncingRef.current = true;
-                toast.loading('Syncing holdings...', { id: 'sync-holdings' });
-
-                const response = await fetch('/api/orders/sync-holdings', { method: 'POST' });
-                const data = await response.json();
-
-                if (data.success) {
-                  toast.success(`Synced ${data.synced} holdings from ${data.totalOrders} orders`, { id: 'sync-holdings' });
-                  // Reset sync flag to allow re-sync if needed
-                  hasSyncedRef.current = false;
-                  await refreshAll();
-                } else {
-                  toast.error('Sync failed: ' + (data.error || 'Unknown error'), { id: 'sync-holdings' });
-                }
-              } catch (error) {
-                console.error('Error syncing holdings:', error);
-                toast.error('Error syncing holdings. Check console for details.', { id: 'sync-holdings' });
-              } finally {
-                isSyncingRef.current = false;
-              }
-            }}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors"
-          >
-            Sync Holdings
-          </button>
-          <button
-            onClick={async () => {
-              try {
-                toast.loading('Cleaning up zero-quantity holdings...', { id: 'cleanup-holdings' });
-                // Call cleanup API endpoint
-                const response = await fetch('/api/orders/cleanup-holdings', {
-                  method: 'POST',
-                  cache: 'no-store',
-                  headers: {
-                    'Cache-Control': 'no-cache',
-                  }
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                  if (data.cleaned > 0) {
-                    toast.success(`Cleaned up ${data.cleaned} zero-quantity holdings`, { id: 'cleanup-holdings' });
-                  } else {
-                    toast.success('No zero-quantity holdings found', { id: 'cleanup-holdings' });
-                  }
-
-                  // Wait for database to propagate
-                  await new Promise(resolve => setTimeout(resolve, 1500));
-                  await refreshAll();
-                } else {
-                  toast.error(data.error || 'Cleanup failed', { id: 'cleanup-holdings' });
-                }
-              } catch (error) {
-                console.error('Error cleaning up holdings:', error);
-                toast.error('Error cleaning up holdings', { id: 'cleanup-holdings' });
-              }
-            }}
-            className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded text-sm font-medium transition-colors"
-          >
-            Cleanup Holdings
-          </button>
-          <button
-            onClick={async () => {
-              try {
-                toast.loading('Refreshing portfolio...', { id: 'refresh-portfolio' });
-                await refreshAll();
-                toast.success('Portfolio refreshed', { id: 'refresh-portfolio' });
-              } catch (error) {
-                console.error('Error refreshing portfolio:', error);
-                toast.error('Error refreshing portfolio', { id: 'refresh-portfolio' });
-              }
-            }}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-medium transition-colors"
-          >
-            Refresh Portfolio
-          </button>
-          <button
-            onClick={() => (window as any).checkLimitOrders?.()}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium transition-colors"
-          >
-            Test Limit Orders
-          </button>
-        </div>
       </div>
 
       {/* Order Form - Only show if URL has action param (from buy/sell buttons) */}
@@ -854,6 +761,9 @@ function OrdersContent() {
               <thead className="bg-gray-700">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    Date
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">
                     Coin
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">
@@ -879,13 +789,25 @@ function OrdersContent() {
               <tbody className="bg-gray-800 divide-y divide-gray-700">
                 {orders.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-4 text-center text-gray-400">
+                    <td colSpan={8} className="px-6 py-4 text-center text-gray-400">
                       No orders yet
                     </td>
                   </tr>
                 ) : (
                   orders.map((order) => (
                     <tr key={order.id} className="hover:bg-gray-700 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                        {new Date(order.order_date).toLocaleString('en-IN', {
+                          timeZone: 'Asia/Kolkata',
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                          hour12: true
+                        })}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
                         {order.coin_symbol}
                       </td>
@@ -909,12 +831,12 @@ function OrdersContent() {
                         <div className="flex flex-col gap-1">
                           <div>
                             {order.price_per_unit
-                              ? `$${order.price_per_unit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              ? `$${(parseFloat(order.quantity.toString()) * order.price_per_unit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                               : 'Market'}
                           </div>
                           {(currentPrices[order.coin_id?.toLowerCase()] || currentPrices[order.coin_id]) && (
                             <div className="text-xs text-gray-400">
-                              Current: ${(currentPrices[order.coin_id?.toLowerCase()] || currentPrices[order.coin_id]).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              Current: ${(parseFloat(order.quantity.toString()) * (currentPrices[order.coin_id?.toLowerCase()] || currentPrices[order.coin_id])).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
                           )}
                         </div>

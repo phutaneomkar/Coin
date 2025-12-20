@@ -14,6 +14,7 @@ create table if not exists strategies (
   
   -- State persistence
   current_coin_id text, -- If currently in a trade
+  current_order_id uuid, -- Track the active order (Buy or Sell)
   current_coin_symbol text,
   entry_price decimal, -- Price bought at
   entry_quantity decimal, -- Quantity bought

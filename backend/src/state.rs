@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::services::matching_engine::MatchingEngine;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct AppState {
     pub pool: PgPool,
     pub matching_engine: Arc<MatchingEngine>,

@@ -16,6 +16,13 @@ pub struct MatchingEngine {
     pool: PgPool,
     orders: Arc<Mutex<HashMap<String, Vec<LimitOrder>>>>, // CoinID -> Orders
     prices: Arc<Mutex<HashMap<String, Decimal>>>, // CoinID -> Latest Price
+    ticker_data: Arc<Mutex<HashMap<String, TickerData>>>, // CoinID -> Volume & Price Data
+}
+
+#[derive(Debug, Clone)]
+pub struct TickerData {
+    pub price: Decimal,
+    pub volume_quote: Decimal, // 'q' from Binance (USDT volume)
 }
 
 #[derive(Debug, Clone)]
@@ -34,6 +41,7 @@ struct LimitOrder {
 struct BinanceTicker {
     s: String, // Symbol
     c: String, // Close price
+    q: String, // Quote Asset Volume
 }
 
 impl MatchingEngine {
@@ -42,6 +50,7 @@ impl MatchingEngine {
             pool,
             orders: Arc::new(Mutex::new(HashMap::new())),
             prices: Arc::new(Mutex::new(HashMap::new())),
+            ticker_data: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -57,6 +66,7 @@ impl MatchingEngine {
         // 2. Connect to Binance WebSocket
         let orders_clone = self.orders.clone();
         let prices_clone = self.prices.clone(); // Clone for WebSocket task
+        let ticker_data_clone = self.ticker_data.clone();
         let pool_clone = self.pool.clone();
         
         tokio::spawn(async move {
@@ -76,14 +86,25 @@ impl MatchingEngine {
                                 if let Ok(tickers) = serde_json::from_str::<Vec<BinanceTicker>>(&text) {
                                     let mut orders = orders_clone.lock().await;
                                     
+                                    // Batch update ticker data for efficiency
+                                    let mut new_ticker_data = Vec::with_capacity(tickers.len());
+
                                     for ticker in tickers {
                                         let symbol = ticker.s.to_lowercase();
-                                        // Remove 'usdt' suffix to match our coin_ids roughly
-                                        // e.g. "btcusdt" -> "btc"
+                                        // Only care about USDT pairs
+                                        if !symbol.ends_with("usdt") { continue; }
+                                        
                                         let coin_id = symbol.replace("usdt", "");
                                         
-                                        if let Ok(current_price) = ticker.c.parse::<Decimal>() {
-                                            // Update Price Store
+                                        if let (Ok(current_price), Ok(volume_quote)) = (ticker.c.parse::<Decimal>(), ticker.q.parse::<Decimal>()) {
+                                            
+                                            // Store data for analysis
+                                            new_ticker_data.push((coin_id.clone(), TickerData {
+                                                price: current_price,
+                                                volume_quote
+                                            }));
+
+                                            // Update Price Store (Legacy support)
                                             {
                                                 let mut prices_map = prices_clone.lock().await;
                                                 prices_map.insert(coin_id.clone(), current_price);
@@ -122,6 +143,14 @@ impl MatchingEngine {
                                                     coin_orders.remove(i);
                                                 }
                                             }
+                                        }
+                                    }
+
+                                    // Update Ticker Data Store
+                                    if !new_ticker_data.is_empty() {
+                                        let mut td_map = ticker_data_clone.lock().await;
+                                        for (cid, data) in new_ticker_data {
+                                            td_map.insert(cid, data);
                                         }
                                     }
                                 }
@@ -260,5 +289,20 @@ impl MatchingEngine {
     pub async fn get_prices(&self) -> HashMap<String, Decimal> {
         let prices = self.prices.lock().await;
         prices.clone()
+    }
+
+    // NEW: Get Top liquid coins for analysis
+    pub async fn get_top_volume_coins(&self, limit: usize) -> Vec<(String, TickerData)> {
+        let ticker_map = self.ticker_data.lock().await;
+        
+        let mut coins: Vec<(String, TickerData)> = ticker_map.iter()
+            .filter(|(_, data)| data.price > Decimal::ZERO && data.volume_quote > Decimal::ZERO) // Filter out 0 or invalid
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        // Sort by quote volume descending (highest volume first)
+        coins.sort_by(|a, b| b.1.volume_quote.cmp(&a.1.volume_quote));
+
+        coins.into_iter().take(limit).collect()
     }
 }

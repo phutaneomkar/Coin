@@ -26,7 +26,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // Load configuration
-    dotenv::dotenv().ok();
+    if let Err(e) = dotenvy::dotenv() {
+        tracing::warn!("⚠️ Failed to load .env file: {}", e);
+    }
+    dotenvy::dotenv().ok(); // Keep original behavior primarily but warn above
     let config = Config::from_env()?;
 
     // Initialize database
