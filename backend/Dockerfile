@@ -3,6 +3,8 @@
 FROM rust:latest as builder
 WORKDIR /app
 COPY . .
+# Enable offline mode for sqlx
+ENV SQLX_OFFLINE=true
 # Build release binary
 RUN cargo build --release
 

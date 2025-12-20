@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, user_id, coin_id, coin_symbol, order_type, quantity, price_per_unit \n            FROM orders \n            WHERE order_status = 'pending' AND order_mode = 'limit'\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "coin_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "coin_symbol",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "order_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "quantity",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "price_per_unit",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "7385cb1eeefffb348d51d6d478456508d9ee8505faf1127c1fb73bb7531efca3"
+}
