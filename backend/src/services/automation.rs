@@ -7,7 +7,7 @@ use crate::services::matching_engine::MatchingEngine;
 use uuid::Uuid;
 use chrono::{Utc, DateTime};
 use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use reqwest::Client;
 use futures::stream::{self, StreamExt};
 
@@ -41,7 +41,9 @@ struct CoinAnalysis {
     current_price: Decimal,
     predicted_price_10s: Decimal,
     price_change_percent: Decimal,
+    #[allow(dead_code)]
     buy_pressure: Decimal, // Total buy quantity * price
+    #[allow(dead_code)]
     sell_pressure: Decimal, // Total sell quantity * price
 }
 
@@ -305,7 +307,7 @@ impl AutomationEngine {
         }
 
         // Parallel Analysis with Concurrency Limit (10 concurrent requests)
-        let mut analyses = stream::iter(top_coins)
+        let analyses = stream::iter(top_coins)
             .map(|(coin_id, ticker_data)| {
                 let self_ref = &self;
                 async move {

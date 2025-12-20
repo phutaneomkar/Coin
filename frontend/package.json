@@ -13,8 +13,8 @@
     "@supabase/supabase-js": "^2.87.1",
     "lucide-react": "^0.561.0",
     "next": "15.1.0",
-    "react": "19.0.0-rc-66855b96-20241106",
-    "react-dom": "19.0.0-rc-66855b96-20241106",
+    "react": "19.0.0-rc-de68d2f4-20241204",
+    "react-dom": "19.0.0-rc-de68d2f4-20241204",
     "react-hot-toast": "^2.6.0",
     "recharts": "^3.5.1",
     "zustand": "^5.0.9"
