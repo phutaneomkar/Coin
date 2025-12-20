@@ -7,10 +7,10 @@ services:
     plan: free
     branch: main
     envVars:
+      # DATABASE_URL must be provided in Render dashboard
       - key: DATABASE_URL
-        sync: false # User must provide this in dashboard
-      - key: PORT
-        value: 10000
+        sync: false
+      # PORT is automatically set by Render for web services
     healthCheckPath: /health
     autoDeploy: true
 
@@ -20,7 +20,7 @@ services:
     env: node
     rootDir: frontend
     branch: main
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm start
     plan: free
     envVars:
