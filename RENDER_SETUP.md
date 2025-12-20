@@ -123,10 +123,12 @@ In the frontend service settings, add:
 ### Backend Deployment:
 1. Render will build the Docker image (this takes 5-10 minutes for first build)
 2. The build process:
-   - Installs Rust toolchain
+   - Uses Rust latest stable version (supports newer dependencies)
    - Compiles your Rust code
    - Creates optimized binary
 3. Service will start automatically after build
+
+**Note**: The Dockerfile uses `rust:latest` to ensure compatibility with all dependencies. If you encounter build errors related to Rust version, you may need to update the Dockerfile to use a specific Rust version.
 
 ### Frontend Deployment:
 1. Render installs Node.js dependencies
@@ -173,6 +175,7 @@ Verify both services are running:
   - Missing dependencies in `Cargo.toml`
   - Rust compilation errors
   - Database connection issues
+  - **Rust version errors** (e.g., "edition2024 is required"): The Dockerfile uses `rust:latest` to support newer dependencies. If you still get version errors, you may need to update dependencies in `Cargo.toml` to versions compatible with stable Rust.
 
 **Problem**: Backend crashes on startup
 - **Solution**: 

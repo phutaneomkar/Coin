@@ -1,5 +1,6 @@
 # Build Stage
-FROM rust:1.75 as builder
+# Using latest stable Rust to support newer dependencies
+FROM rust:latest as builder
 WORKDIR /app
 COPY . .
 # Build release binary
