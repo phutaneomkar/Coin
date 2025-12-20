@@ -20,7 +20,7 @@ services:
     env: node
     rootDir: frontend
     branch: main
-    buildCommand: npm ci && npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm start
     plan: free
     envVars:
