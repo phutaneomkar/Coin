@@ -1,0 +1,41 @@
+services:
+  # Backend Service (Rust + Docker)
+  - type: web
+    name: crypto-backend
+    env: docker
+    rootDir: backend
+    plan: free
+    branch: main
+    envVars:
+      # DATABASE_URL must be provided in Render dashboard
+      - key: DATABASE_URL
+        sync: false
+      # PORT is automatically set by Render for web services
+    healthCheckPath: /health
+    autoDeploy: true
+
+  # Frontend Service (Next.js)
+  - type: web
+    name: coin-frontend
+    env: node
+    rootDir: frontend
+    branch: main
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: crypto-backend
+          property: url
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: COINDCX_API_URL
+        value: https://api.coindcx.com
+      - key: COINDCX_API_KEY
+        sync: false
+      - key: COINDCX_API_SECRET
+        sync: false

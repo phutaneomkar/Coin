@@ -44,7 +44,7 @@ frontend/.turbo
 
 # Rust (Backend)
 backend/target/
-backend/Cargo.lock
+
 backend/**/*.rs.bk
 backend/**/*.pdb
 *.exe

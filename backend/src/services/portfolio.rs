@@ -16,15 +16,12 @@ pub fn calculate_portfolio(request: PortfolioRequest) -> PortfolioResponse {
     let mut holdings_with_value = Vec::new();
 
     for holding in request.holdings {
-        let current_price = price_map
-            .get(&holding.coin_id)
-            .copied()
-            .unwrap_or(dec!(0));
+        let current_price = price_map.get(&holding.coin_id).copied().unwrap_or(dec!(0));
 
         let current_value = holding.quantity * current_price;
         let invested_value = holding.quantity * holding.average_buy_price;
         let profit_loss = current_value - invested_value;
-        
+
         let profit_loss_percent = if invested_value > dec!(0) {
             (profit_loss / invested_value) * dec!(100)
         } else {
@@ -63,4 +60,3 @@ pub fn calculate_portfolio(request: PortfolioRequest) -> PortfolioResponse {
         },
     }
 }
-

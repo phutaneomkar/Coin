@@ -1,10 +1,10 @@
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::env;
 use uuid::Uuid;
-use rust_decimal::Decimal;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, sqlx::FromRow)]
+#[allow(dead_code)]
 struct Strategy {
     id: Uuid,
     user_id: Uuid,
@@ -17,6 +17,7 @@ struct Strategy {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+#[allow(dead_code)]
 struct Order {
     id: Uuid,
     coin_symbol: String,
@@ -35,9 +36,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 --- DIAGNOSTIC REPORT ---");
 
     // 1. Check Strategies
-    let strategies = sqlx::query_as::<_, Strategy>("SELECT * FROM strategies WHERE status = 'running'")
-        .fetch_all(&pool)
-        .await?;
+    let strategies =
+        sqlx::query_as::<_, Strategy>("SELECT * FROM strategies WHERE status = 'running'")
+            .fetch_all(&pool)
+            .await?;
 
     println!("📊 Running Strategies: {}", strategies.len());
 
@@ -55,7 +57,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await?;
 
             if let Some(o) = order {
-                println!("  -> LINKED ORDER: {} {} @ {:?} - Status: [{}]", o.order_type.to_uppercase(), o.coin_symbol, o.price_per_unit, o.order_status);
+                println!(
+                    "  -> LINKED ORDER: {} {} @ {:?} - Status: [{}]",
+                    o.order_type.to_uppercase(),
+                    o.coin_symbol,
+                    o.price_per_unit,
+                    o.order_status
+                );
             } else {
                 println!("  -> LINKED ORDER NOT FOUND! (Critical state error?)");
             }

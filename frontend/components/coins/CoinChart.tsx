@@ -41,7 +41,7 @@ export function CoinChart({ coinId, coinSymbol }: CoinChartProps) {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Map timeframe to days for CoinGecko API
       const daysMap: Record<Timeframe, number> = {
         '1h': 1,
@@ -54,10 +54,10 @@ export function CoinChart({ coinId, coinSymbol }: CoinChartProps) {
       };
 
       const days = daysMap[tf];
-        const cacheKey = `/api/crypto/chart?coinId=${coinId}&days=${days}&vs_currency=usd&timeframe=${tf}`;
-        const response = await fetch(cacheKey, {
-          next: { revalidate: 30 }, // Cache for 30 seconds
-        });
+      const cacheKey = `/api/crypto/chart?coinId=${coinId}&days=${days}&vs_currency=usd&timeframe=${tf}`;
+      const response = await fetch(cacheKey, {
+        next: { revalidate: 30 }, // Cache for 30 seconds
+      });
 
       if (!response.ok) {
         // Read error data once
@@ -74,7 +74,7 @@ export function CoinChart({ coinId, coinSymbol }: CoinChartProps) {
       }
 
       const data = await response.json();
-      
+
       // Validate data structure
       if (!data || !data.prices || !Array.isArray(data.prices)) {
         throw new Error('Invalid chart data format received');
@@ -86,7 +86,7 @@ export function CoinChart({ coinId, coinSymbol }: CoinChartProps) {
 
       setChartData(data.prices);
       setHasLoaded(true);
-      
+
       // Use OHLC data from API if available (more accurate for timeframe)
       if (data.ohlc) {
         setCurrentCandle({
@@ -100,10 +100,10 @@ export function CoinChart({ coinId, coinSymbol }: CoinChartProps) {
         // Fallback: calculate from prices if OHLC not available
         const prices = data.prices.map((p: [number, number]) => p[1]).filter((p: number) => p > 0);
         const volumes = data.total_volumes?.map((v: [number, number]) => v[1]).filter((v: number) => v > 0) || [];
-        
+
         if (prices.length > 0) {
           const lastPrice = data.prices[data.prices.length - 1];
-          
+
           setCurrentCandle({
             open: prices[0] || 0,
             high: Math.max(...prices) || 0,
@@ -176,11 +176,10 @@ export function CoinChart({ coinId, coinSymbol }: CoinChartProps) {
               <button
                 key={tf.value}
                 onClick={() => setTimeframe(tf.value)}
-                className={`px-3 py-1 rounded text-sm transition-colors ${
-                  timeframe === tf.value
+                className={`px-3 py-1 rounded text-sm transition-colors ${timeframe === tf.value
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                }`}
+                  }`}
               >
                 {tf.label}
               </button>
@@ -256,7 +255,7 @@ function ChartVisualization({ data, timeframe }: { data: [number, number][], tim
   // Transform data for recharts
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
-    
+
     // Format time based on timeframe for better readability - shorter format to prevent overlap
     const formatTime = (timestamp: number) => {
       const date = new Date(timestamp);
@@ -284,7 +283,7 @@ function ChartVisualization({ data, timeframe }: { data: [number, number][], tim
           return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       }
     };
-    
+
     return data
       .filter(([timestamp, price]) => timestamp && price && price > 0) // Filter invalid data
       .map(([timestamp, price]) => ({
@@ -300,16 +299,16 @@ function ChartVisualization({ data, timeframe }: { data: [number, number][], tim
   const getXAxisInterval = (): number | 'preserveStartEnd' => {
     const dataLength = chartData.length;
     if (dataLength === 0) return 'preserveStartEnd';
-    
+
     // Target: Show approximately 5-8 labels maximum for readability
     const maxLabels = 7;
     const minInterval = Math.max(1, Math.floor(dataLength / maxLabels));
-    
+
     // For very short timeframes with few data points, show all
     if (dataLength <= maxLabels) {
       return 0; // Show all labels
     }
-    
+
     // For longer timeframes, calculate interval to show ~maxLabels
     switch (timeframe) {
       case '1h':
@@ -356,8 +355,8 @@ function ChartVisualization({ data, timeframe }: { data: [number, number][], tim
   const yAxisMax = maxPrice + priceRange * 0.1;
 
   // Determine if price is going up or down
-  const isPositive = chartData.length > 1 
-    ? chartData[chartData.length - 1].price >= chartData[0].price 
+  const isPositive = chartData.length > 1
+    ? chartData[chartData.length - 1].price >= chartData[0].price
     : true;
 
   const formatPrice = (value: number) => {
@@ -378,14 +377,14 @@ function ChartVisualization({ data, timeframe }: { data: [number, number][], tim
         >
           <defs>
             <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-              <stop 
-                offset="5%" 
-                stopColor={isPositive ? '#10b981' : '#ef4444'} 
+              <stop
+                offset="5%"
+                stopColor={isPositive ? '#10b981' : '#ef4444'}
                 stopOpacity={0.3}
               />
-              <stop 
-                offset="95%" 
-                stopColor={isPositive ? '#10b981' : '#ef4444'} 
+              <stop
+                offset="95%"
+                stopColor={isPositive ? '#10b981' : '#ef4444'}
                 stopOpacity={0}
               />
             </linearGradient>
@@ -415,7 +414,7 @@ function ChartVisualization({ data, timeframe }: { data: [number, number][], tim
               borderRadius: '8px',
               color: '#f3f4f6',
             }}
-            formatter={(value: number) => formatPrice(value)}
+            formatter={(value: any) => [formatPrice(Number(value) || 0), 'Price']}
             labelStyle={{ color: '#9ca3af' }}
           />
           <Area

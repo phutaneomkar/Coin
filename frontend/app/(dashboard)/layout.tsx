@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { Sidebar } from '@/components/dashboard/Sidebar';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 

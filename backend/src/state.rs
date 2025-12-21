@@ -1,6 +1,6 @@
+use crate::services::matching_engine::MatchingEngine;
 use sqlx::PgPool;
 use std::sync::Arc;
-use crate::services::matching_engine::MatchingEngine;
 
 #[derive(Clone)]
 #[allow(dead_code)]

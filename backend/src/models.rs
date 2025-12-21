@@ -103,20 +103,15 @@ pub struct PortfolioValueResponse {
     pub total_value: Decimal,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 #[serde(rename_all = "lowercase")]
 #[allow(dead_code)]
 pub enum OrderStatus {
+    #[default]
     Pending,
     Completed,
     Cancelled,
     Failed,
-}
-
-impl Default for OrderStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 // Add From<String> for OrderStatus to handle DB string conversion if needed
@@ -140,7 +135,7 @@ pub struct Order {
     pub coin_symbol: String,
     pub order_type: String, // "buy" or "sell"
     pub order_mode: String, // "limit" or "market"
-    pub order_status: String, 
+    pub order_status: String,
     pub quantity: Decimal,
     pub price_per_unit: Option<Decimal>,
     pub total_amount: Decimal,
