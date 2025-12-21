@@ -27,7 +27,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Load configuration
     // Clear potential stale system env vars to ensure we load from .env
-    std::env::remove_var("DATABASE_URL");
+    // Clear potential stale system env vars to ensure we load from .env
+    // std::env::remove_var("DATABASE_URL"); // REMOVED: Breaks production deployment where env vars are passed directly
     
     if let Err(e) = dotenvy::dotenv() {
         tracing::warn!("⚠️ Failed to load .env file: {}", e);
