@@ -10,13 +10,6 @@ impl Database {
             .parse::<sqlx::postgres::PgConnectOptions>()?
             .statement_cache_capacity(0);
 
-        // FIX: Switch from Supabase Transaction Pooler (6543) to Direct Connection (5432)
-        // This avoids "prepared statement already exists" errors with sqlx
-        if options.get_port() == 6543 {
-            tracing::info!("🔄 Switching from Transaction Pooler (6543) to Direct Connection (5432)");
-            options = options.port(5432);
-        }
-
         let pool = sqlx::postgres::PgPoolOptions::new()
             .connect_with(options)
             .await?;

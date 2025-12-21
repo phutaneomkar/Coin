@@ -34,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("⚠️ Failed to load .env file: {}", e);
     }
     let config = Config::from_env()?;
+    tracing::info!("DEBUG: Loaded DATABASE_URL: {}", config.database_url.replace(":", "***")); 
 
     // Initialize database
     println!("🔌 Attempting to connect to database... URL: {}", config.database_url);
