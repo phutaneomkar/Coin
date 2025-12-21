@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE orders \n            SET order_status = 'completed', \n                price_per_unit = $1, \n                total_amount = $2, \n                completed_at = NOW()\n            WHERE id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Numeric",
+        "Numeric",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d9823cc7a91b19e28fabb85ea0eb473288425570fbb752a89b58d7e766221627"
+}

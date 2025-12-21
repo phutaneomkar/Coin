@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE strategies SET current_coin_id = NULL, current_order_id = NULL, entry_price = NULL, iterations_completed = iterations_completed + 1 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "657a676c1e9467d0a8b467566066c6f529b89eccd5864795fceb087882b478a2"
+}
