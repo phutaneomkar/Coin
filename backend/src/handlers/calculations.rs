@@ -1,8 +1,11 @@
+use crate::models::{
+    HoldingValue, PortfolioValueRequest, PortfolioValueResponse, ProfitLossRequest,
+    ProfitLossResponse,
+};
 use axum::Json;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
-use crate::models::{ProfitLossRequest, ProfitLossResponse, PortfolioValueRequest, PortfolioValueResponse, HoldingValue};
 
 pub async fn calculate_profit_loss(
     Json(request): Json<ProfitLossRequest>,
@@ -18,10 +21,7 @@ pub async fn calculate_profit_loss(
     let mut holdings_with_value = Vec::new();
 
     for holding in request.holdings {
-        let current_price = price_map
-            .get(&holding.coin_id)
-            .copied()
-            .unwrap_or(dec!(0));
+        let current_price = price_map.get(&holding.coin_id).copied().unwrap_or(dec!(0));
 
         let current_value = holding.quantity * current_price;
         let invested_value = holding.quantity * holding.average_buy_price;
@@ -71,14 +71,9 @@ pub async fn calculate_portfolio_value(
     let mut total_value = dec!(0);
 
     for holding in request.holdings {
-        let current_price = price_map
-            .get(&holding.coin_id)
-            .copied()
-            .unwrap_or(dec!(0));
+        let current_price = price_map.get(&holding.coin_id).copied().unwrap_or(dec!(0));
         total_value += holding.quantity * current_price;
     }
 
-    Json(PortfolioValueResponse {
-        total_value,
-    })
+    Json(PortfolioValueResponse { total_value })
 }

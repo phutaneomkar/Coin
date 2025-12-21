@@ -3,7 +3,9 @@
 
 param(
     [Parameter(Mandatory=$true)]
-    [string]$ConnectionString
+    [string]$ConnectionString,
+    [Parameter(Mandatory=$false)]
+    [string]$FallbackConnectionString
 )
 
 $envFile = Join-Path $PSScriptRoot ".env"
@@ -38,6 +40,25 @@ if (-not $updated) {
     Write-Host "✅ Updated DATABASE_URL in .env file"
 }
 
+if ($FallbackConnectionString -and $FallbackConnectionString.Trim().Length -gt 0) {
+    $fallbackUpdated = $false
+    $newContent = $newContent | ForEach-Object {
+        if ($_ -match '^DATABASE_URL_FALLBACK=') {
+            $fallbackUpdated = $true
+            "DATABASE_URL_FALLBACK=$FallbackConnectionString"
+        } else {
+            $_
+        }
+    }
+
+    if (-not $fallbackUpdated) {
+        $newContent += "DATABASE_URL_FALLBACK=$FallbackConnectionString"
+        Write-Host "✅ Added DATABASE_URL_FALLBACK to .env file"
+    } else {
+        Write-Host "✅ Updated DATABASE_URL_FALLBACK in .env file"
+    }
+}
+
 # Write back to file
 $newContent | Set-Content $envFile
 
@@ -47,4 +68,3 @@ Write-Host ""
 Write-Host "Now test the connection:"
 Write-Host "  cargo run --bin test_connection"
 Write-Host ""
-

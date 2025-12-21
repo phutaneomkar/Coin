@@ -1,15 +1,13 @@
+use crate::models::{IndicatorRequest, IndicatorResponse};
 use axum::Json;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use crate::models::{IndicatorRequest, IndicatorResponse};
 
-pub async fn calculate_rsi(
-    Json(request): Json<IndicatorRequest>,
-) -> Json<IndicatorResponse> {
+pub async fn calculate_rsi(Json(request): Json<IndicatorRequest>) -> Json<IndicatorResponse> {
     // Simple RSI calculation (simplified version)
     let period = request.period.unwrap_or(14);
     let prices = &request.prices;
-    
+
     if prices.len() < period as usize + 1 {
         return Json(IndicatorResponse {
             value: dec!(50), // Neutral RSI
@@ -47,9 +45,7 @@ pub async fn calculate_rsi(
     })
 }
 
-pub async fn calculate_sma(
-    Json(request): Json<IndicatorRequest>,
-) -> Json<IndicatorResponse> {
+pub async fn calculate_sma(Json(request): Json<IndicatorRequest>) -> Json<IndicatorResponse> {
     let period = request.period.unwrap_or(20);
     let prices = &request.prices;
 
@@ -80,9 +76,7 @@ pub async fn calculate_sma(
     })
 }
 
-pub async fn calculate_ema(
-    Json(request): Json<IndicatorRequest>,
-) -> Json<IndicatorResponse> {
+pub async fn calculate_ema(Json(request): Json<IndicatorRequest>) -> Json<IndicatorResponse> {
     let period = request.period.unwrap_or(20);
     let prices = &request.prices;
 
@@ -106,9 +100,7 @@ pub async fn calculate_ema(
     })
 }
 
-pub async fn calculate_macd(
-    Json(request): Json<IndicatorRequest>,
-) -> Json<IndicatorResponse> {
+pub async fn calculate_macd(Json(request): Json<IndicatorRequest>) -> Json<IndicatorResponse> {
     // MACD = EMA(12) - EMA(26)
     // For simplicity, we'll use the last price as MACD value
     let prices = &request.prices;

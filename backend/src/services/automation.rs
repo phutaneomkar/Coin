@@ -1,15 +1,15 @@
+use crate::services::matching_engine::MatchingEngine;
+use chrono::{DateTime, Utc};
+use futures::stream::{self, StreamExt};
+use reqwest::Client;
+use rust_decimal::Decimal;
+use serde::Deserialize;
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use tracing::{info, error, warn};
-use rust_decimal::Decimal;
-use crate::services::matching_engine::MatchingEngine;
+use tracing::{error, info, warn};
 use uuid::Uuid;
-use chrono::{Utc, DateTime};
-use std::collections::HashMap;
-use serde::Deserialize;
-use reqwest::Client;
-use futures::stream::{self, StreamExt};
 
 #[derive(Debug, sqlx::FromRow)]
 #[allow(dead_code)]
@@ -74,10 +74,14 @@ impl AutomationEngine {
         info!("🤖 Starting Advanced Automation Engine...");
 
         // Ensure Schema Migration
-        if let Err(e) = sqlx::query("ALTER TABLE strategies ADD COLUMN IF NOT EXISTS current_order_id uuid").execute(&self.pool).await {
-             error!("⚠️ Failed to run runtime migration for strategies: {}", e);
+        if let Err(e) =
+            sqlx::query("ALTER TABLE strategies ADD COLUMN IF NOT EXISTS current_order_id uuid")
+                .execute(&self.pool)
+                .await
+        {
+            error!("⚠️ Failed to run runtime migration for strategies: {}", e);
         }
-        
+
         let self_clone = self.clone();
         tokio::spawn(async move {
             loop {
@@ -91,11 +95,10 @@ impl AutomationEngine {
 
     async fn process_strategies(&self) -> anyhow::Result<()> {
         // 1. Fetch running strategies
-        let strategies = sqlx::query_as::<_, Strategy>(
-            "SELECT * FROM strategies WHERE status = 'running'"
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let strategies =
+            sqlx::query_as::<_, Strategy>("SELECT * FROM strategies WHERE status = 'running'")
+                .fetch_all(&self.pool)
+                .await?;
 
         if strategies.is_empty() {
             return Ok(());
@@ -106,15 +109,22 @@ impl AutomationEngine {
             // Check time limit
             if let Some(end_time) = strategy.end_time {
                 if Utc::now() >= end_time {
-                    info!("⏰ Strategy {} reached time limit. Stopping immediately.", strategy.id);
+                    info!(
+                        "⏰ Strategy {} reached time limit. Stopping immediately.",
+                        strategy.id
+                    );
                     self.stop_strategy(strategy.id, "completed").await?;
                     continue;
                 }
             } else {
                 // Calculate end_time if not set
-                let end_time = strategy.start_time + chrono::Duration::minutes(strategy.duration_minutes as i64);
+                let end_time = strategy.start_time
+                    + chrono::Duration::minutes(strategy.duration_minutes as i64);
                 if Utc::now() >= end_time {
-                    info!("⏰ Strategy {} reached time limit. Stopping immediately.", strategy.id);
+                    info!(
+                        "⏰ Strategy {} reached time limit. Stopping immediately.",
+                        strategy.id
+                    );
                     self.stop_strategy(strategy.id, "completed").await?;
                     continue;
                 }
@@ -122,7 +132,10 @@ impl AutomationEngine {
 
             // Check order count limit
             if strategy.iterations_completed >= strategy.total_iterations {
-                info!("📊 Strategy {} reached order limit ({} orders). Stopping immediately.", strategy.id, strategy.total_iterations);
+                info!(
+                    "📊 Strategy {} reached order limit ({} orders). Stopping immediately.",
+                    strategy.id, strategy.total_iterations
+                );
                 self.stop_strategy(strategy.id, "completed").await?;
                 continue;
             }
@@ -138,7 +151,7 @@ impl AutomationEngine {
         for strategy in strategies {
             // Double-check status (might have been stopped above)
             let current_strategy = sqlx::query_as::<_, Strategy>(
-                "SELECT * FROM strategies WHERE id = $1 AND status = 'running'"
+                "SELECT * FROM strategies WHERE id = $1 AND status = 'running'",
             )
             .bind(strategy.id)
             .fetch_optional(&self.pool)
@@ -154,7 +167,8 @@ impl AutomationEngine {
                 self.check_order_status(&strategy, order_id).await?;
             } else if let Some(coin_id) = &strategy.current_coin_id {
                 // Currently holding a coin, waiting for sell order
-                self.handle_active_trade(&strategy, &prices, coin_id).await?;
+                self.handle_active_trade(&strategy, &prices, coin_id)
+                    .await?;
             } else {
                 // Not in a trade: Analyze ALL coins and find best opportunity
                 self.handle_entry(&strategy, &prices).await?;
@@ -166,7 +180,7 @@ impl AutomationEngine {
 
     async fn check_order_status(&self, strategy: &Strategy, order_id: Uuid) -> anyhow::Result<()> {
         let order = sqlx::query_as::<_, OrderStatusRow>(
-            "SELECT order_status, order_type, price_per_unit, quantity FROM orders WHERE id = $1"
+            "SELECT order_status, order_type, price_per_unit, quantity FROM orders WHERE id = $1",
         )
         .bind(order_id)
         .fetch_optional(&self.pool)
@@ -177,14 +191,20 @@ impl AutomationEngine {
                 if order.order_type == "buy" {
                     // BUY COMPLETED -> PLACE SELL IMMEDIATELY
                     let buy_price = order.price_per_unit.unwrap_or(Decimal::ZERO);
-                    if buy_price <= Decimal::ZERO { return Ok(()); }
-                    
+                    if buy_price <= Decimal::ZERO {
+                        return Ok(());
+                    }
+
                     let coin_id = strategy.current_coin_id.as_deref().unwrap_or("unknown");
 
-                    info!("✅ Strategy {} Buy Complete @ {}. Placing Limit Sell immediately...", strategy.id, buy_price);
+                    info!(
+                        "✅ Strategy {} Buy Complete @ {}. Placing Limit Sell immediately...",
+                        strategy.id, buy_price
+                    );
 
                     // Calculate Sell Target Price (buy_price * (1 + profit_percentage/100))
-                    let multiplier = Decimal::ONE + (strategy.profit_percentage / Decimal::from(100));
+                    let multiplier =
+                        Decimal::ONE + (strategy.profit_percentage / Decimal::from(100));
                     let target_price = buy_price * multiplier;
 
                     // Place Limit Sell Order IMMEDIATELY
@@ -205,13 +225,15 @@ impl AutomationEngine {
                     .execute(&self.pool).await?;
 
                     // Add to matching engine for immediate matching
-                    self.matching_engine.add_order(
-                        sell_order_id.to_string(),
-                        coin_id.to_string(),
-                        "sell".to_string(),
-                        target_price,
-                        quantity,
-                    ).await;
+                    self.matching_engine
+                        .add_order(
+                            sell_order_id.to_string(),
+                            coin_id.to_string(),
+                            "sell".to_string(),
+                            target_price,
+                            quantity,
+                        )
+                        .await;
 
                     // Update Strategy to track SELL order
                     sqlx::query(
@@ -222,22 +244,36 @@ impl AutomationEngine {
                     .bind(buy_price)
                     .execute(&self.pool).await?;
 
-                    info!("🚀 Strategy {} Limit Sell Order Placed @ {} ({}% profit target)", strategy.id, target_price, strategy.profit_percentage);
-
+                    info!(
+                        "🚀 Strategy {} Limit Sell Order Placed @ {} ({}% profit target)",
+                        strategy.id, target_price, strategy.profit_percentage
+                    );
                 } else if order.order_type == "sell" {
                     // SELL COMPLETED -> FINISH ITERATION
-                    info!("💰 Strategy {} Sell Complete. Profit Secured. Iteration {}/{}", 
-                        strategy.id, strategy.iterations_completed + 1, strategy.total_iterations);
-                    
+                    info!(
+                        "💰 Strategy {} Sell Complete. Profit Secured. Iteration {}/{}",
+                        strategy.id,
+                        strategy.iterations_completed + 1,
+                        strategy.total_iterations
+                    );
+
                     let sell_price = order.price_per_unit.unwrap_or_default();
                     let entry_price = strategy.entry_price.unwrap_or(sell_price);
-                    
+
                     // Log Profit
                     let quantity = order.quantity;
                     let profit = (sell_price - entry_price) * quantity;
                     let coin_id = strategy.current_coin_id.as_deref().unwrap_or("unknown");
 
-                    self.log_action(strategy.id, "sell", coin_id, sell_price, sell_price * quantity, Some(profit)).await?;
+                    self.log_action(
+                        strategy.id,
+                        "sell",
+                        coin_id,
+                        sell_price,
+                        sell_price * quantity,
+                        Some(profit),
+                    )
+                    .await?;
 
                     // Reset Strategy for next iteration
                     sqlx::query(
@@ -249,33 +285,45 @@ impl AutomationEngine {
             } else if order.order_status == "cancelled" || order.order_status == "failed" {
                 // Handle Cancelled/Failed Orders
                 if order.order_type == "buy" {
-                    info!("⚠️ Strategy {} Buy Order {} Cancelled/Failed. Resetting entry search.", strategy.id, order_id);
+                    info!(
+                        "⚠️ Strategy {} Buy Order {} Cancelled/Failed. Resetting entry search.",
+                        strategy.id, order_id
+                    );
                     sqlx::query(
                         "UPDATE strategies SET current_coin_id = NULL, current_order_id = NULL, entry_price = NULL WHERE id = $1"
                     )
                     .bind(strategy.id)
                     .execute(&self.pool).await?;
                 } else if order.order_type == "sell" {
-                    info!("⚠️ Strategy {} Sell Order {} Cancelled/Failed. Resuming price monitoring.", strategy.id, order_id);
-                    sqlx::query(
-                        "UPDATE strategies SET current_order_id = NULL WHERE id = $1"
-                    )
-                    .bind(strategy.id)
-                    .execute(&self.pool).await?;
+                    info!(
+                        "⚠️ Strategy {} Sell Order {} Cancelled/Failed. Resuming price monitoring.",
+                        strategy.id, order_id
+                    );
+                    sqlx::query("UPDATE strategies SET current_order_id = NULL WHERE id = $1")
+                        .bind(strategy.id)
+                        .execute(&self.pool)
+                        .await?;
                 }
             }
         } else {
-            info!("⚠️ Strategy {} tracked order {} not found. Clearing track.", strategy.id, order_id);
-            sqlx::query(
-                "UPDATE strategies SET current_order_id = NULL WHERE id = $1"
-            )
-            .bind(strategy.id)
-            .execute(&self.pool).await?;
+            info!(
+                "⚠️ Strategy {} tracked order {} not found. Clearing track.",
+                strategy.id, order_id
+            );
+            sqlx::query("UPDATE strategies SET current_order_id = NULL WHERE id = $1")
+                .bind(strategy.id)
+                .execute(&self.pool)
+                .await?;
         }
         Ok(())
     }
 
-    async fn handle_active_trade(&self, strategy: &Strategy, prices: &HashMap<String, Decimal>, coin_id: &str) -> anyhow::Result<()> {
+    async fn handle_active_trade(
+        &self,
+        strategy: &Strategy,
+        prices: &HashMap<String, Decimal>,
+        coin_id: &str,
+    ) -> anyhow::Result<()> {
         // This should rarely happen now since we place sell order immediately after buy
         // But keep as fallback
         let current_price = match prices.get(coin_id) {
@@ -284,18 +332,23 @@ impl AutomationEngine {
         };
 
         let entry_price = strategy.entry_price.unwrap_or_default();
-        if entry_price <= Decimal::ZERO { return Ok(()); }
+        if entry_price <= Decimal::ZERO {
+            return Ok(());
+        }
 
         let multiplier = Decimal::ONE + (strategy.profit_percentage / Decimal::from(100));
         let target_price = entry_price * multiplier;
 
         if current_price >= target_price {
-            info!("🤖 Strategy {}: Target Hit! Selling {} @ {} (Entry: {})", strategy.id, coin_id, current_price, entry_price);
-            
+            info!(
+                "🤖 Strategy {}: Target Hit! Selling {} @ {} (Entry: {})",
+                strategy.id, coin_id, current_price, entry_price
+            );
+
             let quantity = strategy.amount / entry_price;
             let order_id = Uuid::new_v4();
             let total_amount = current_price * quantity;
-            
+
             sqlx::query(
                 "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'limit', $5, $6, $7, 'pending')"
             )
@@ -308,56 +361,63 @@ impl AutomationEngine {
             .bind(total_amount)
             .execute(&self.pool).await?;
 
-            self.matching_engine.add_order(
-                order_id.to_string(),
-                coin_id.to_string(),
-                "sell".to_string(),
-                current_price,
-                quantity,
-            ).await;
+            self.matching_engine
+                .add_order(
+                    order_id.to_string(),
+                    coin_id.to_string(),
+                    "sell".to_string(),
+                    current_price,
+                    quantity,
+                )
+                .await;
 
-            sqlx::query(
-                "UPDATE strategies SET current_order_id = $2 WHERE id = $1"
-            )
-            .bind(strategy.id)
-            .bind(order_id)
-            .execute(&self.pool).await?;
+            sqlx::query("UPDATE strategies SET current_order_id = $2 WHERE id = $1")
+                .bind(strategy.id)
+                .bind(order_id)
+                .execute(&self.pool)
+                .await?;
         }
 
         Ok(())
     }
 
-    async fn handle_entry(&self, strategy: &Strategy, _prices: &HashMap<String, Decimal>) -> anyhow::Result<()> {
+    async fn handle_entry(
+        &self,
+        strategy: &Strategy,
+        _prices: &HashMap<String, Decimal>,
+    ) -> anyhow::Result<()> {
         // ANALYZE TOP LIQUID COINS (Top 50 by Volume)
-        info!("🔍 Strategy {}: Fetching Top 50 High-Volume Coins...", strategy.id);
+        info!(
+            "🔍 Strategy {}: Fetching Top 50 High-Volume Coins...",
+            strategy.id
+        );
 
         let top_coins = self.matching_engine.get_top_volume_coins(50).await;
-        
+
         if top_coins.is_empty() {
-             warn!("⚠️ Strategy {}: No liquid coins found yet. Waiting for market data...", strategy.id);
-             return Ok(());
+            warn!(
+                "⚠️ Strategy {}: No liquid coins found yet. Waiting for market data...",
+                strategy.id
+            );
+            return Ok(());
         }
 
         // Parallel Analysis with Concurrency Limit (10 concurrent requests)
         let analyses = stream::iter(top_coins)
             .map(|(coin_id, ticker_data)| {
                 let self_ref = &self;
-                async move {
-                    self_ref.analyze_coin(&coin_id, ticker_data.price).await
-                }
+                async move { self_ref.analyze_coin(&coin_id, ticker_data.price).await }
             })
             .buffer_unordered(10) // Limit concurrency to avoid IP bans
-            .filter_map(|res| async {
-                match res {
-                    Ok(analysis) => Some(analysis),
-                    Err(_) => None, // Skip failed fetches
-                }
-            })
+            .filter_map(|res| async { res.ok() })
             .collect::<Vec<_>>()
             .await;
 
         if analyses.is_empty() {
-            warn!("⚠️ Strategy {}: Analysis failed for all candidates. Skipping cycle.", strategy.id);
+            warn!(
+                "⚠️ Strategy {}: Analysis failed for all candidates. Skipping cycle.",
+                strategy.id
+            );
             return Ok(());
         }
 
@@ -376,8 +436,10 @@ impl AutomationEngine {
             let quantity = strategy.amount / best.current_price;
             let buy_order_id = Uuid::new_v4();
 
-            info!("💸 Strategy {}: Placing MARKET BUY for {} @ {} (Quantity: {})", 
-                strategy.id, best.coin_id, best.current_price, quantity);
+            info!(
+                "💸 Strategy {}: Placing MARKET BUY for {} @ {} (Quantity: {})",
+                strategy.id, best.coin_id, best.current_price, quantity
+            );
 
             // Place market order (will execute immediately)
             sqlx::query(
@@ -393,7 +455,15 @@ impl AutomationEngine {
             .execute(&self.pool).await?;
 
             // Log the buy action
-            self.log_action(strategy.id, "buy", &best.coin_id, best.current_price, strategy.amount, None).await?;
+            self.log_action(
+                strategy.id,
+                "buy",
+                &best.coin_id,
+                best.current_price,
+                strategy.amount,
+                None,
+            )
+            .await?;
 
             // Update user balance and holdings (simulate immediate execution) (omitted for brevity)
 
@@ -416,13 +486,15 @@ impl AutomationEngine {
             .execute(&self.pool).await?;
 
             // Add to matching engine
-            self.matching_engine.add_order(
-                sell_order_id.to_string(),
-                best.coin_id.clone(),
-                "sell".to_string(),
-                target_price,
-                quantity,
-            ).await;
+            self.matching_engine
+                .add_order(
+                    sell_order_id.to_string(),
+                    best.coin_id.clone(),
+                    "sell".to_string(),
+                    target_price,
+                    quantity,
+                )
+                .await;
 
             // Update Strategy
             sqlx::query(
@@ -434,23 +506,33 @@ impl AutomationEngine {
             .bind(best.current_price)
             .execute(&self.pool).await?;
 
-            info!("✅ Strategy {}: Market buy completed, limit sell placed @ {} ({}% target)", 
-                strategy.id, target_price, strategy.profit_percentage);
-
+            info!(
+                "✅ Strategy {}: Market buy completed, limit sell placed @ {} ({}% target)",
+                strategy.id, target_price, strategy.profit_percentage
+            );
         } else {
             // No coin meets threshold, wait for next cycle
-            info!("⏳ Strategy {}: No coins meet {}% threshold. Waiting for next cycle...", strategy.id, threshold_percent);
+            info!(
+                "⏳ Strategy {}: No coins meet {}% threshold. Waiting for next cycle...",
+                strategy.id, threshold_percent
+            );
         }
 
         Ok(())
     }
 
-    async fn analyze_coin(&self, coin_id: &str, current_price: Decimal) -> anyhow::Result<CoinAnalysis> {
+    async fn analyze_coin(
+        &self,
+        coin_id: &str,
+        current_price: Decimal,
+    ) -> anyhow::Result<CoinAnalysis> {
         // Fetch order book data
         let order_book = self.fetch_order_book(coin_id).await?;
 
         // Calculate buy and sell pressure
-        let buy_pressure: Decimal = order_book.bids.iter()
+        let buy_pressure: Decimal = order_book
+            .bids
+            .iter()
             .take(10) // Top 10 buy orders
             .map(|bid| {
                 let price: Decimal = bid[0].parse().unwrap_or(Decimal::ZERO);
@@ -459,7 +541,9 @@ impl AutomationEngine {
             })
             .sum();
 
-        let sell_pressure: Decimal = order_book.asks.iter()
+        let sell_pressure: Decimal = order_book
+            .asks
+            .iter()
             .take(10) // Top 10 sell orders
             .map(|ask| {
                 let price: Decimal = ask[0].parse().unwrap_or(Decimal::ZERO);
@@ -498,22 +582,33 @@ impl AutomationEngine {
 
     async fn fetch_order_book(&self, coin_id: &str) -> anyhow::Result<BinanceOrderBookResponse> {
         let symbol = format!("{}USDT", coin_id.to_uppercase());
-        let url = format!("https://api.binance.com/api/v3/depth?symbol={}&limit=20", symbol);
-        
-        let response = self.http_client
-            .get(&url)
-            .send()
-            .await?;
+        let url = format!(
+            "https://api.binance.com/api/v3/depth?symbol={}&limit=20",
+            symbol
+        );
+
+        let response = self.http_client.get(&url).send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch order book for {}", coin_id));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch order book for {}",
+                coin_id
+            ));
         }
 
         let order_book: BinanceOrderBookResponse = response.json().await?;
         Ok(order_book)
     }
 
-    async fn log_action(&self, strategy_id: Uuid, action: &str, coin_id: &str, price: Decimal, amount: Decimal, profit: Option<Decimal>) -> anyhow::Result<()> {
+    async fn log_action(
+        &self,
+        strategy_id: Uuid,
+        action: &str,
+        coin_id: &str,
+        price: Decimal,
+        amount: Decimal,
+        profit: Option<Decimal>,
+    ) -> anyhow::Result<()> {
         let quantity = amount / price;
         sqlx::query(
             "INSERT INTO strategy_logs (strategy_id, action, coin_id, coin_symbol, price, quantity, amount, profit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
