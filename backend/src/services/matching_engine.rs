@@ -167,7 +167,18 @@ impl MatchingEngine {
     }
 
     async fn load_pending_orders(&self) -> anyhow::Result<()> {
-        let rows = sqlx::query!(
+        #[derive(sqlx::FromRow)]
+        struct PendingOrderRow {
+            id: Uuid,
+            user_id: Uuid,
+            coin_id: String,
+            coin_symbol: String,
+            order_type: String,
+            quantity: Decimal,
+            price_per_unit: Option<Decimal>,
+        }
+
+        let rows = sqlx::query_as::<_, PendingOrderRow>(
             r#"
             SELECT id, user_id, coin_id, coin_symbol, order_type, quantity, price_per_unit 
             FROM orders 
@@ -218,7 +229,7 @@ impl MatchingEngine {
             }
         };
 
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             UPDATE orders 
             SET order_status = 'completed', 
@@ -226,11 +237,11 @@ impl MatchingEngine {
                 total_amount = $2, 
                 completed_at = NOW()
             WHERE id = $3
-            "#,
-            execution_price,
-            total_amount,
-            order_uuid
+            "#
         )
+        .bind(execution_price)
+        .bind(total_amount)
+        .bind(order_uuid)
         .execute(&pool)
         .await;
 

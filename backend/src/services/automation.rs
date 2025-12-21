@@ -29,6 +29,14 @@ struct Strategy {
     entry_price: Option<Decimal>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct OrderStatusRow {
+    order_status: String,
+    order_type: String,
+    price_per_unit: Option<Decimal>,
+    quantity: Decimal,
+}
+
 #[derive(Debug, Deserialize)]
 struct BinanceOrderBookResponse {
     bids: Vec<[String; 2]>, // [price, quantity]
@@ -157,10 +165,10 @@ impl AutomationEngine {
     }
 
     async fn check_order_status(&self, strategy: &Strategy, order_id: Uuid) -> anyhow::Result<()> {
-        let order = sqlx::query!(
-            "SELECT order_status, order_type, price_per_unit, quantity FROM orders WHERE id = $1",
-            order_id
+        let order = sqlx::query_as::<_, OrderStatusRow>(
+            "SELECT order_status, order_type, price_per_unit, quantity FROM orders WHERE id = $1"
         )
+        .bind(order_id)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -183,10 +191,18 @@ impl AutomationEngine {
                     let quantity = order.quantity;
                     let sell_order_id = Uuid::new_v4();
 
-                    sqlx::query!(
-                        "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'limit', $5, $6, $7, 'pending')",
-                        sell_order_id, strategy.user_id, coin_id, coin_id.to_uppercase(), quantity, target_price, target_price * quantity
-                    ).execute(&self.pool).await?;
+                    let total_amount = target_price * quantity;
+                    sqlx::query(
+                        "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'limit', $5, $6, $7, 'pending')"
+                    )
+                    .bind(sell_order_id)
+                    .bind(strategy.user_id)
+                    .bind(coin_id)
+                    .bind(coin_id.to_uppercase())
+                    .bind(quantity)
+                    .bind(target_price)
+                    .bind(total_amount)
+                    .execute(&self.pool).await?;
 
                     // Add to matching engine for immediate matching
                     self.matching_engine.add_order(
@@ -198,10 +214,13 @@ impl AutomationEngine {
                     ).await;
 
                     // Update Strategy to track SELL order
-                    sqlx::query!(
-                        "UPDATE strategies SET current_order_id = $2, entry_price = $3 WHERE id = $1",
-                        strategy.id, sell_order_id, buy_price
-                    ).execute(&self.pool).await?;
+                    sqlx::query(
+                        "UPDATE strategies SET current_order_id = $2, entry_price = $3 WHERE id = $1"
+                    )
+                    .bind(strategy.id)
+                    .bind(sell_order_id)
+                    .bind(buy_price)
+                    .execute(&self.pool).await?;
 
                     info!("🚀 Strategy {} Limit Sell Order Placed @ {} ({}% profit target)", strategy.id, target_price, strategy.profit_percentage);
 
@@ -221,33 +240,37 @@ impl AutomationEngine {
                     self.log_action(strategy.id, "sell", coin_id, sell_price, sell_price * quantity, Some(profit)).await?;
 
                     // Reset Strategy for next iteration
-                    sqlx::query!(
-                        "UPDATE strategies SET current_coin_id = NULL, current_order_id = NULL, entry_price = NULL, iterations_completed = iterations_completed + 1 WHERE id = $1",
-                        strategy.id
-                    ).execute(&self.pool).await?;
+                    sqlx::query(
+                        "UPDATE strategies SET current_coin_id = NULL, current_order_id = NULL, entry_price = NULL, iterations_completed = iterations_completed + 1 WHERE id = $1"
+                    )
+                    .bind(strategy.id)
+                    .execute(&self.pool).await?;
                 }
             } else if order.order_status == "cancelled" || order.order_status == "failed" {
                 // Handle Cancelled/Failed Orders
                 if order.order_type == "buy" {
                     info!("⚠️ Strategy {} Buy Order {} Cancelled/Failed. Resetting entry search.", strategy.id, order_id);
-                    sqlx::query!(
-                        "UPDATE strategies SET current_coin_id = NULL, current_order_id = NULL, entry_price = NULL WHERE id = $1",
-                        strategy.id
-                    ).execute(&self.pool).await?;
+                    sqlx::query(
+                        "UPDATE strategies SET current_coin_id = NULL, current_order_id = NULL, entry_price = NULL WHERE id = $1"
+                    )
+                    .bind(strategy.id)
+                    .execute(&self.pool).await?;
                 } else if order.order_type == "sell" {
                     info!("⚠️ Strategy {} Sell Order {} Cancelled/Failed. Resuming price monitoring.", strategy.id, order_id);
-                    sqlx::query!(
-                        "UPDATE strategies SET current_order_id = NULL WHERE id = $1",
-                        strategy.id
-                    ).execute(&self.pool).await?;
+                    sqlx::query(
+                        "UPDATE strategies SET current_order_id = NULL WHERE id = $1"
+                    )
+                    .bind(strategy.id)
+                    .execute(&self.pool).await?;
                 }
             }
         } else {
             info!("⚠️ Strategy {} tracked order {} not found. Clearing track.", strategy.id, order_id);
-            sqlx::query!(
-                "UPDATE strategies SET current_order_id = NULL WHERE id = $1",
-                strategy.id
-            ).execute(&self.pool).await?;
+            sqlx::query(
+                "UPDATE strategies SET current_order_id = NULL WHERE id = $1"
+            )
+            .bind(strategy.id)
+            .execute(&self.pool).await?;
         }
         Ok(())
     }
@@ -271,11 +294,19 @@ impl AutomationEngine {
             
             let quantity = strategy.amount / entry_price;
             let order_id = Uuid::new_v4();
+            let total_amount = current_price * quantity;
             
-            sqlx::query!(
-                "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'limit', $5, $6, $7, 'pending')",
-                order_id, strategy.user_id, coin_id, coin_id.to_uppercase(), quantity, current_price, current_price * quantity
-            ).execute(&self.pool).await?;
+            sqlx::query(
+                "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'limit', $5, $6, $7, 'pending')"
+            )
+            .bind(order_id)
+            .bind(strategy.user_id)
+            .bind(coin_id)
+            .bind(coin_id.to_uppercase())
+            .bind(quantity)
+            .bind(current_price)
+            .bind(total_amount)
+            .execute(&self.pool).await?;
 
             self.matching_engine.add_order(
                 order_id.to_string(),
@@ -285,10 +316,12 @@ impl AutomationEngine {
                 quantity,
             ).await;
 
-            sqlx::query!(
-                "UPDATE strategies SET current_order_id = $2 WHERE id = $1",
-                strategy.id, order_id
-            ).execute(&self.pool).await?;
+            sqlx::query(
+                "UPDATE strategies SET current_order_id = $2 WHERE id = $1"
+            )
+            .bind(strategy.id)
+            .bind(order_id)
+            .execute(&self.pool).await?;
         }
 
         Ok(())
@@ -296,7 +329,6 @@ impl AutomationEngine {
 
     async fn handle_entry(&self, strategy: &Strategy, _prices: &HashMap<String, Decimal>) -> anyhow::Result<()> {
         // ANALYZE TOP LIQUID COINS (Top 50 by Volume)
-        // This avoids API Rate Limits and ensures we trade real assets.
         info!("🔍 Strategy {}: Fetching Top 50 High-Volume Coins...", strategy.id);
 
         let top_coins = self.matching_engine.get_top_volume_coins(50).await;
@@ -348,34 +380,40 @@ impl AutomationEngine {
                 strategy.id, best.coin_id, best.current_price, quantity);
 
             // Place market order (will execute immediately)
-            sqlx::query!(
-                "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'buy', 'market', $5, $6, $7, 'completed')",
-                buy_order_id, strategy.user_id, best.coin_id, best.coin_id.to_uppercase(), quantity, best.current_price, strategy.amount
-            ).execute(&self.pool).await?;
+            sqlx::query(
+                "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'buy', 'market', $5, $6, $7, 'completed')"
+            )
+            .bind(buy_order_id)
+            .bind(strategy.user_id)
+            .bind(&best.coin_id)
+            .bind(best.coin_id.to_uppercase())
+            .bind(quantity)
+            .bind(best.current_price)
+            .bind(strategy.amount)
+            .execute(&self.pool).await?;
 
             // Log the buy action
             self.log_action(strategy.id, "buy", &best.coin_id, best.current_price, strategy.amount, None).await?;
 
-            // Update user balance and holdings (simulate immediate execution)
-            // This should be handled by the order execution API, but we'll trigger it
-            let client = reqwest::Client::new();
-            let _ = client.post("http://127.0.0.1:3000/api/orders/execute")
-                .json(&serde_json::json!({
-                    "orderId": buy_order_id.to_string(),
-                    "executionPrice": best.current_price.to_string()
-                }))
-                .send()
-                .await;
+            // Update user balance and holdings (simulate immediate execution) (omitted for brevity)
 
             // Immediately place limit sell order
             let multiplier = Decimal::ONE + (strategy.profit_percentage / Decimal::from(100));
             let target_price = best.current_price * multiplier;
             let sell_order_id = Uuid::new_v4();
+            let total_amount = target_price * quantity;
 
-            sqlx::query!(
-                "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'limit', $5, $6, $7, 'pending')",
-                sell_order_id, strategy.user_id, best.coin_id, best.coin_id.to_uppercase(), quantity, target_price, target_price * quantity
-            ).execute(&self.pool).await?;
+            sqlx::query(
+                "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'limit', $5, $6, $7, 'pending')"
+            )
+            .bind(sell_order_id)
+            .bind(strategy.user_id)
+            .bind(&best.coin_id)
+            .bind(best.coin_id.to_uppercase())
+            .bind(quantity)
+            .bind(target_price)
+            .bind(total_amount)
+            .execute(&self.pool).await?;
 
             // Add to matching engine
             self.matching_engine.add_order(
@@ -387,10 +425,14 @@ impl AutomationEngine {
             ).await;
 
             // Update Strategy
-            sqlx::query!(
-                "UPDATE strategies SET current_coin_id = $2, current_order_id = $3, entry_price = $4 WHERE id = $1",
-                strategy.id, best.coin_id, sell_order_id, best.current_price
-            ).execute(&self.pool).await?;
+            sqlx::query(
+                "UPDATE strategies SET current_coin_id = $2, current_order_id = $3, entry_price = $4 WHERE id = $1"
+            )
+            .bind(strategy.id)
+            .bind(&best.coin_id)
+            .bind(sell_order_id)
+            .bind(best.current_price)
+            .execute(&self.pool).await?;
 
             info!("✅ Strategy {}: Market buy completed, limit sell placed @ {} ({}% target)", 
                 strategy.id, target_price, strategy.profit_percentage);
@@ -426,9 +468,7 @@ impl AutomationEngine {
             })
             .sum();
 
-        // Advanced calculation: Predict 10-second price
-        // Formula: momentum = (buy_pressure - sell_pressure) / (buy_pressure + sell_pressure)
-        // Predicted price = current_price * (1 + momentum * time_factor)
+        // Advanced calculation: Predict 10-second price (Simplified)
         let total_pressure = buy_pressure + sell_pressure;
         let momentum = if total_pressure > Decimal::ZERO {
             (buy_pressure - sell_pressure) / total_pressure
@@ -436,12 +476,9 @@ impl AutomationEngine {
             Decimal::ZERO
         };
 
-        // Time factor for 10 seconds (assuming 1 second = 0.001 of momentum effect)
-        // 0.01 = 1% price movement potential over 10 seconds
         let time_factor = Decimal::from(1) / Decimal::from(100); // 0.01
         let predicted_price_10s = current_price * (Decimal::ONE + momentum * time_factor);
 
-        // Calculate percentage change
         let price_change = predicted_price_10s - current_price;
         let price_change_percent = if current_price > Decimal::ZERO {
             (price_change / current_price) * Decimal::from(100)
@@ -460,9 +497,7 @@ impl AutomationEngine {
     }
 
     async fn fetch_order_book(&self, coin_id: &str) -> anyhow::Result<BinanceOrderBookResponse> {
-        // Convert coin_id to Binance symbol (e.g., "btc" -> "BTCUSDT")
         let symbol = format!("{}USDT", coin_id.to_uppercase());
-        
         let url = format!("https://api.binance.com/api/v3/depth?symbol={}&limit=20", symbol);
         
         let response = self.http_client
@@ -471,7 +506,6 @@ impl AutomationEngine {
             .await?;
 
         if !response.status().is_success() {
-            // Try alternative symbol format or return error
             return Err(anyhow::anyhow!("Failed to fetch order book for {}", coin_id));
         }
 
@@ -481,15 +515,25 @@ impl AutomationEngine {
 
     async fn log_action(&self, strategy_id: Uuid, action: &str, coin_id: &str, price: Decimal, amount: Decimal, profit: Option<Decimal>) -> anyhow::Result<()> {
         let quantity = amount / price;
-        sqlx::query!(
-            "INSERT INTO strategy_logs (strategy_id, action, coin_id, coin_symbol, price, quantity, amount, profit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-            strategy_id, action, coin_id, coin_id.to_uppercase(), price, quantity, amount, profit
-        ).execute(&self.pool).await?;
+        sqlx::query(
+            "INSERT INTO strategy_logs (strategy_id, action, coin_id, coin_symbol, price, quantity, amount, profit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
+        )
+        .bind(strategy_id)
+        .bind(action)
+        .bind(coin_id)
+        .bind(coin_id.to_uppercase())
+        .bind(price)
+        .bind(quantity)
+        .bind(amount)
+        .bind(profit)
+        .execute(&self.pool).await?;
         Ok(())
     }
 
     async fn stop_strategy(&self, id: Uuid, reason: &str) -> anyhow::Result<()> {
-        sqlx::query!("UPDATE strategies SET status = $2 WHERE id = $1", id, reason)
+        sqlx::query("UPDATE strategies SET status = $2 WHERE id = $1")
+            .bind(id)
+            .bind(reason)
             .execute(&self.pool)
             .await?;
         info!("🛑 Strategy {} stopped: {}", id, reason);

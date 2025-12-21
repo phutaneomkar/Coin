@@ -26,14 +26,26 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // Load configuration
+    // Clear potential stale system env vars to ensure we load from .env
+    std::env::remove_var("DATABASE_URL");
+    
     if let Err(e) = dotenvy::dotenv() {
         tracing::warn!("⚠️ Failed to load .env file: {}", e);
     }
-    dotenvy::dotenv().ok(); // Keep original behavior primarily but warn above
     let config = Config::from_env()?;
 
     // Initialize database
-    let db = Database::new(&config.database_url).await?;
+    println!("🔌 Attempting to connect to database... URL: {}", config.database_url);
+    let db = match Database::new(&config.database_url).await {
+        Ok(db) => {
+            println!("✅ Database connection successful!");
+            db
+        }
+        Err(e) => {
+            println!("❌ Database connection failed: {:?}", e);
+            return Err(e);
+        }
+    };
     let pool = db.pool().clone();
 
     // 🚀 Start High-Performance Matching Engine

@@ -2,9 +2,9 @@ use sqlx::PgPool;
 use std::env;
 use uuid::Uuid;
 use rust_decimal::Decimal;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, sqlx::FromRow)]
+#[allow(dead_code)]
 struct Strategy {
     id: Uuid,
     user_id: Uuid,
@@ -17,6 +17,7 @@ struct Strategy {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+#[allow(dead_code)]
 struct Order {
     id: Uuid,
     coin_symbol: String,

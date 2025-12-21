@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
         try {
           console.log('Notifying Rust backend of new limit order:', order.id);
           // Don't await this, let it run in background/fail silently (fire and forget)
-          const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:3001';
+          const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:3002';
           fetch(`${backendUrl}/api/orders/process`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
