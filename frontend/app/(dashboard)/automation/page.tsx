@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Play, Pause, Square, Clock, DollarSign, Percent, Save, Hash } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '../../../lib/supabase/client';
 
 export default function AutomationPage() {
   const [priceLimit, setPriceLimit] = useState('');
@@ -263,8 +263,8 @@ export default function AutomationPage() {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${strategy.status === 'running' ? 'bg-green-900/50 text-green-400' :
-                            strategy.status === 'completed' ? 'bg-blue-900/50 text-blue-400' :
-                              'bg-red-900/50 text-red-400'
+                          strategy.status === 'completed' ? 'bg-blue-900/50 text-blue-400' :
+                            'bg-red-900/50 text-red-400'
                           }`}>
                           {strategy.status.toUpperCase()}
                         </span>

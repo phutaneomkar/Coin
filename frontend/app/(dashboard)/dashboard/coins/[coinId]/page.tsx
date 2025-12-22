@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '../../../../../lib/supabase/client';
 import { ArrowLeft } from 'lucide-react';
-import { MarketOverview } from '@/components/coins/MarketOverview';
-import { CoinChart } from '@/components/coins/CoinChart';
-import { TradingButtons } from '@/components/coins/TradingButtons';
-import { OrderBook } from '@/components/coins/OrderBook';
-import { TradeHistory } from '@/components/coins/TradeHistory';
+import { MarketOverview } from '../../../../../components/coins/MarketOverview';
+import { CoinChart } from '../../../../../components/coins/CoinChart';
+import { TradingButtons } from '../../../../../components/coins/TradingButtons';
+import { OrderBook } from '../../../../../components/coins/OrderBook';
+import { TradeHistory } from '../../../../../components/coins/TradeHistory';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
 interface CoinDetail {
@@ -61,18 +61,18 @@ export default function CoinDetailPage() {
           } catch (e) {
             // If parsing fails, use empty object
           }
-          
+
           // Handle rate limiting
           if (response.status === 429) {
             const retryAfter = errorData.retryAfter || 60;
             throw new Error(`Rate limit exceeded. Please wait ${retryAfter} seconds and try again.`);
           }
-          
+
           // Don't show technical error details to users
           if (response.status === 404) {
             throw new Error('Coin not found');
           }
-          
+
           throw new Error('Failed to load coin details. Please try again later.');
         }
 
@@ -166,7 +166,7 @@ export default function CoinDetailPage() {
   if (error || !coinDetail) {
     // Check if it's a rate limit error
     const isRateLimit = error?.toLowerCase().includes('rate limit');
-    
+
     return (
       <div className="min-h-screen bg-gray-900 p-6">
         <button
@@ -181,7 +181,7 @@ export default function CoinDetailPage() {
             {isRateLimit ? 'Rate Limit Exceeded' : 'Error Loading Coin'}
           </p>
           <p className="text-gray-400 mb-4">
-            {isRateLimit 
+            {isRateLimit
               ? 'Too many requests. Please wait a moment and try again.'
               : (error || 'Coin not found')
             }
@@ -235,21 +235,19 @@ export default function CoinDetailPage() {
               <div className="flex gap-2 mb-4 border-b border-gray-700">
                 <button
                   onClick={() => setSelectedTab('orderbook')}
-                  className={`px-4 py-2 text-sm font-medium transition-colors ${
-                    selectedTab === 'orderbook'
-                      ? 'text-blue-400 border-b-2 border-blue-400'
-                      : 'text-gray-400 hover:text-gray-300'
-                  }`}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${selectedTab === 'orderbook'
+                    ? 'text-blue-400 border-b-2 border-blue-400'
+                    : 'text-gray-400 hover:text-gray-300'
+                    }`}
                 >
                   Order Book
                 </button>
                 <button
                   onClick={() => setSelectedTab('trades')}
-                  className={`px-4 py-2 text-sm font-medium transition-colors ${
-                    selectedTab === 'trades'
-                      ? 'text-blue-400 border-b-2 border-blue-400'
-                      : 'text-gray-400 hover:text-gray-300'
-                  }`}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${selectedTab === 'trades'
+                    ? 'text-blue-400 border-b-2 border-blue-400'
+                    : 'text-gray-400 hover:text-gray-300'
+                    }`}
                 >
                   Trade History
                 </button>
@@ -258,9 +256,9 @@ export default function CoinDetailPage() {
               {/* Content */}
               <div className="flex-1 overflow-hidden">
                 {selectedTab === 'orderbook' ? (
-                  <OrderBook 
-                    coinId={coinId} 
-                    coinSymbol={coinDetail.symbol} 
+                  <OrderBook
+                    coinId={coinId}
+                    coinSymbol={coinDetail.symbol}
                     currentPrice={coinDetail.current_price}
                   />
                 ) : (
