@@ -2,11 +2,11 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCryptoPrices } from '@/hooks/useCryptoPrices';
-import { usePriceStore } from '@/store/priceStore';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { useCryptoPrices } from '../../../hooks/useCryptoPrices';
+import { usePriceStore } from '../../../store/priceStore';
+import { LoadingSpinner } from '../../../components/shared/LoadingSpinner';
 import { TrendingUp, TrendingDown, Star, Search, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '../../../lib/supabase/client';
 import { toast } from 'react-hot-toast';
 
 type SortField = 'name' | 'price' | 'change' | 'market_cap' | 'volume';
@@ -64,7 +64,7 @@ export default function DashboardPage() {
         if (insertError.code === '23505') {
           return; // Profile was created by another request, that's fine
         }
-        
+
         // 42501 = permission denied (RLS policy missing)
         if (insertError.code === '42501') {
           console.error('❌ INSERT policy missing on profiles table!');
@@ -72,7 +72,7 @@ export default function DashboardPage() {
           console.error('   See file: ADD_PROFILE_INSERT_POLICY.sql');
           throw new Error('INSERT policy missing. Run ADD_PROFILE_INSERT_POLICY.sql in Supabase.');
         }
-        
+
         // Log full error details
         console.error('Error creating profile:', {
           code: insertError.code,
@@ -80,7 +80,7 @@ export default function DashboardPage() {
           details: insertError.details,
           hint: insertError.hint,
         });
-        
+
         throw insertError;
       }
 
@@ -144,7 +144,7 @@ export default function DashboardPage() {
         coin.symbol.toLowerCase().includes(query) ||
         coin.id.toLowerCase().includes(query)
       );
-      
+
       if (!matchesSearch) return false;
 
       // Apply high/low filters
@@ -304,7 +304,7 @@ export default function DashboardPage() {
               .from('watchlist')
               .select('coin_id')
               .eq('user_id', user.id);
-            
+
             if (data) {
               setWatchlistIds(new Set(data.map(item => item.coin_id)));
             }
@@ -330,7 +330,7 @@ export default function DashboardPage() {
         hint: error?.hint,
         fullError: error,
       });
-      
+
       if (error?.code === '23503') {
         toast.error('Profile not found. Please refresh the page.');
       } else if (error?.code === '42501' || error?.message?.includes('row-level security') || error?.message?.includes('INSERT policy')) {
@@ -378,7 +378,7 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <h1 className="text-3xl font-bold text-white">Market Overview</h1>
-          
+
           {/* Search */}
           <div className="relative flex-1 sm:max-w-md">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -396,73 +396,66 @@ export default function DashboardPage() {
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setFilterType('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterType === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === 'all'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
           >
             All
           </button>
           <button
             onClick={() => setFilterType('top_gainers')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterType === 'top_gainers'
-                ? 'bg-green-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === 'top_gainers'
+              ? 'bg-green-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
           >
             <TrendingUp className="w-4 h-4 inline mr-1" />
             Top Gainers
           </button>
           <button
             onClick={() => setFilterType('top_losers')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterType === 'top_losers'
-                ? 'bg-red-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === 'top_losers'
+              ? 'bg-red-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
           >
             <TrendingDown className="w-4 h-4 inline mr-1" />
             Top Losers
           </button>
           <button
             onClick={() => setFilterType('high_price')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterType === 'high_price'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === 'high_price'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
           >
             High Price
           </button>
           <button
             onClick={() => setFilterType('low_price')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterType === 'low_price'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === 'low_price'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
           >
             Low Price
           </button>
           <button
             onClick={() => setFilterType('high_mcap')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterType === 'high_mcap'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === 'high_mcap'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
           >
             High Market Cap
           </button>
           <button
             onClick={() => setFilterType('low_mcap')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterType === 'low_mcap'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === 'low_mcap'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
           >
             Low Market Cap
           </button>
@@ -527,7 +520,7 @@ export default function DashboardPage() {
                 ) : (
                   paginatedCoins.map((coin) => {
                     if (!coin || !coin.current_price) return null;
-                    
+
                     const isPositive = (coin.price_change_percentage_24h || 0) >= 0;
                     const isInWatchlist = watchlistIds.has(coin.id);
                     const isLoading = watchlistLoading === coin.id;
@@ -577,9 +570,8 @@ export default function DashboardPage() {
                               <TrendingDown className="w-4 h-4 text-red-500" />
                             )}
                             <span
-                              className={`text-sm font-medium ${
-                                isPositive ? 'text-green-400' : 'text-red-400'
-                              }`}
+                              className={`text-sm font-medium ${isPositive ? 'text-green-400' : 'text-red-400'
+                                }`}
                             >
                               {isPositive ? '+' : ''}
                               {(coin.price_change_percentage_24h || 0).toFixed(2)}%
@@ -626,7 +618,7 @@ export default function DashboardPage() {
               </tbody>
             </table>
           </div>
-          
+
           {/* Pagination */}
           {filteredAndSortedCoins.length > 0 && totalPages > 1 && (
             <div className="px-4 py-4 bg-gray-700 border-t border-gray-600 flex items-center justify-between">
@@ -642,7 +634,7 @@ export default function DashboardPage() {
                   <ChevronLeft className="w-4 h-4" />
                   Previous
                 </button>
-                
+
                 <div className="flex items-center gap-1">
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                     let pageNum: number;
@@ -655,23 +647,22 @@ export default function DashboardPage() {
                     } else {
                       pageNum = currentPage - 2 + i;
                     }
-                    
+
                     return (
                       <button
                         key={pageNum}
                         onClick={() => setCurrentPage(pageNum)}
-                        className={`px-3 py-2 rounded-lg transition-colors ${
-                          currentPage === pageNum
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                        }`}
+                        className={`px-3 py-2 rounded-lg transition-colors ${currentPage === pageNum
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                          }`}
                       >
                         {pageNum}
                       </button>
                     );
                   })}
                 </div>
-                
+
                 <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}

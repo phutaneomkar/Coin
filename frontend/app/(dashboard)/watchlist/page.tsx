@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { usePriceStore } from '@/store/priceStore';
-import { WatchlistItem, CryptoPrice } from '@/types';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { createClient } from '../../../lib/supabase/client';
+import { usePriceStore } from '../../../store/priceStore';
+import { WatchlistItem, CryptoPrice } from '../../../types';
+import { LoadingSpinner } from '../../../components/shared/LoadingSpinner';
 import { Plus, X, Search, TrendingUp, TrendingDown, ArrowUpDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { useCryptoPrices } from '@/hooks/useCryptoPrices';
+import { useCryptoPrices } from '../../../hooks/useCryptoPrices';
 
 type SortField = 'name' | 'price' | 'change';
 type SortDirection = 'asc' | 'desc';
@@ -212,7 +212,7 @@ export default function WatchlistPage() {
     filtered.sort((a, b) => {
       const priceA = prices[a.coin_id];
       const priceB = prices[b.coin_id];
-      
+
       let aValue: number | string = 0;
       let bValue: number | string = 0;
 
@@ -307,7 +307,7 @@ export default function WatchlistPage() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <h1 className="text-3xl font-bold text-white">Watchlist</h1>
-        
+
         {/* Search */}
         <div className="relative flex-1 sm:max-w-md">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -322,13 +322,13 @@ export default function WatchlistPage() {
       </div>
 
       {/* List View */}
-        {watchlist.length === 0 ? (
+      {watchlist.length === 0 ? (
         <div className="bg-gray-800 rounded-lg shadow-lg p-12 border border-gray-700 text-center">
           <p className="text-gray-400 text-lg">
             Your watchlist is empty. Add coins to track their prices.
           </p>
-          </div>
-        ) : (
+        </div>
+      ) : (
         <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden border border-gray-700">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-700">
@@ -367,12 +367,12 @@ export default function WatchlistPage() {
                   </tr>
                 ) : (
                   filteredAndSortedWatchlist.map((item) => {
-            const price = prices[item.coin_id];
+                    const price = prices[item.coin_id];
                     // Show loading only if price exists but is 0 (unsupported) or if price doesn't exist yet
                     if (!price || (price.current_price === 0 && price.last_updated)) {
                       return (
-                        <tr 
-                          key={item.id} 
+                        <tr
+                          key={item.id}
                           className="hover:bg-gray-700 transition-colors cursor-pointer"
                           onClick={(e) => handleRowClick(item.coin_id, e)}
                         >
@@ -385,31 +385,31 @@ export default function WatchlistPage() {
                             </div>
                           </td>
                           <td colSpan={5} className="px-4 py-4 text-center text-gray-400">
-                            {price && price.current_price === 0 
-                              ? 'Not available on Binance' 
+                            {price && price.current_price === 0
+                              ? 'Not available on Binance'
                               : 'Loading price...'}
                           </td>
                         </tr>
                       );
                     }
-                    
+
                     // Skip if price is still loading (no price data yet)
                     if (!price.current_price) {
                       return null;
                     }
-                    
+
                     const isPositive = (price.price_change_percentage_24h || 0) >= 0;
-                    
-            return (
-                      <tr 
-                        key={item.id} 
+
+                    return (
+                      <tr
+                        key={item.id}
                         className="hover:bg-gray-700 transition-colors cursor-pointer"
                         onClick={(e) => handleRowClick(item.coin_id, e)}
                       >
                         <td className="px-4 py-4 whitespace-nowrap">
-                  <div>
+                          <div>
                             <div className="text-sm font-medium text-white">
-                      {item.coin_symbol}
+                              {item.coin_symbol}
                             </div>
                             <div className="text-sm text-gray-400">{item.coin_id}</div>
                           </div>
@@ -427,9 +427,8 @@ export default function WatchlistPage() {
                               <TrendingDown className="w-4 h-4 text-red-500" />
                             )}
                             <span
-                              className={`text-sm font-medium ${
-                                isPositive ? 'text-green-400' : 'text-red-400'
-                              }`}
+                              className={`text-sm font-medium ${isPositive ? 'text-green-400' : 'text-red-400'
+                                }`}
                             >
                               {isPositive ? '+' : ''}
                               {(price.price_change_percentage_24h || 0).toFixed(2)}%
@@ -444,24 +443,24 @@ export default function WatchlistPage() {
                         <td className="px-4 py-4 whitespace-nowrap text-right hidden lg:table-cell">
                           <div className="text-sm text-gray-300">
                             {formatLargeNumber(price.volume_24h || 0)}
-                  </div>
+                          </div>
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    onClick={() => removeFromWatchlist(item.id)}
+                          <button
+                            onClick={() => removeFromWatchlist(item.id)}
                             className="text-red-400 hover:text-red-300 transition-colors p-2 rounded-lg hover:bg-red-900/20"
                             title="Remove from watchlist"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
                         </td>
                       </tr>
-            );
-          })
-        )}
+                    );
+                  })
+                )}
               </tbody>
             </table>
-      </div>
+          </div>
         </div>
       )}
     </div>

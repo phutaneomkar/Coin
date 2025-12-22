@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useMemo, useRef, Suspense, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { Order } from '@/types';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { OrderForm } from '@/components/orders/OrderForm';
-import { usePriceStore } from '@/store/priceStore';
-import { TradingModal } from '@/components/coins/TradingModal';
+import { createClient } from '../../../lib/supabase/client';
+import { Order } from '../../../types';
+import { LoadingSpinner } from '../../../components/shared/LoadingSpinner';
+import { OrderForm } from '../../../components/orders/OrderForm';
+import { usePriceStore } from '../../../store/priceStore';
+import { TradingModal } from '../../../components/coins/TradingModal';
 import { toast } from 'react-hot-toast';
-import { useCryptoPrices } from '@/hooks/useCryptoPrices';
+import { useCryptoPrices } from '../../../hooks/useCryptoPrices';
 
 function OrdersContent() {
   // Enable real-time price updates

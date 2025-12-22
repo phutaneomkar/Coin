@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { User } from '@/types';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { createClient } from '../../../lib/supabase/client';
+import { User } from '../../../types';
+import { LoadingSpinner } from '../../../components/shared/LoadingSpinner';
 import { toast } from 'react-hot-toast';
 import { Plus } from 'lucide-react';
 
@@ -51,7 +51,7 @@ export default function ProfilePage() {
 
   const handleAddBalance = async () => {
     const amount = parseFloat(addBalanceAmount);
-    
+
     if (!addBalanceAmount || isNaN(amount) || amount <= 0) {
       toast.error('Please enter a valid amount');
       return;
@@ -143,7 +143,7 @@ export default function ProfilePage() {
               ${profile.balance_inr.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
-          
+
           {/* Add Balance Section */}
           <div className="mt-6 pt-6 border-t border-gray-700">
             <label className="block text-sm font-medium text-gray-300 mb-2">Add Balance</label>
@@ -188,13 +188,12 @@ export default function ProfilePage() {
             <label className="block text-sm font-medium text-gray-300">KYC Status</label>
             <p className="mt-1">
               <span
-                className={`px-2 py-1 rounded text-sm ${
-                  profile.kyc_status === 'verified'
-                    ? 'bg-green-900 text-green-300'
-                    : profile.kyc_status === 'rejected'
+                className={`px-2 py-1 rounded text-sm ${profile.kyc_status === 'verified'
+                  ? 'bg-green-900 text-green-300'
+                  : profile.kyc_status === 'rejected'
                     ? 'bg-red-900 text-red-300'
                     : 'bg-yellow-900 text-yellow-300'
-                }`}
+                  }`}
               >
                 {profile.kyc_status}
               </span>
