@@ -297,7 +297,7 @@ export async function GET(request: NextRequest) {
       logs: logs // Return logs for debugging
     });
   } catch (error) {
-    console.error('Error checking limit orders:', error);
+    console.error('API Error in /api/orders/check-limits:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }

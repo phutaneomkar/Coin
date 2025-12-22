@@ -197,7 +197,7 @@ export function getCoinIdFromSymbol(symbol: string): string | null {
  */
 export async function fetchBinanceTickers(): Promise<BinanceTicker[]> {
   const response = await fetch(`${BINANCE_API_BASE}/v3/ticker/24hr`, {
-    next: { revalidate: 1 }, // Cache for 1 second (effectively real-time)
+    cache: 'no-store', // Response is too large for Next.js cache (>2MB)
   });
 
   if (!response.ok) {

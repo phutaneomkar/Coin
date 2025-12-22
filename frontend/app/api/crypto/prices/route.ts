@@ -61,6 +61,7 @@ export async function GET() {
       },
     });
   } catch (error) {
+    console.error('API Error in /api/crypto/prices:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
       {
