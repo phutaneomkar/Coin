@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { usePriceStore } from '@/store/priceStore';
+import { createClient } from '../../lib/supabase/client';
+import { usePriceStore } from '../../store/priceStore';
 import { toast } from 'react-hot-toast';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { OrderType, OrderMode } from '@/types';
+import { LoadingSpinner } from '../shared/LoadingSpinner';
+import { OrderType, OrderMode } from '../../types';
 
 interface OrderFormProps {
   onOrderPlaced: () => void;

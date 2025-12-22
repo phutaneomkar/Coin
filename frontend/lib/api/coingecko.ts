@@ -1,4 +1,4 @@
-import { CryptoPrice } from '@/types';
+import { CryptoPrice } from '../../types';
 import { requestDeduplicator } from './requestDeduplicator';
 
 const COINGECKO_API_URL = 'https://api.coingecko.com/api/v3';
@@ -78,7 +78,7 @@ export async function fetchCryptoPrices(): Promise<CryptoPrice[]> {
     if (!response.ok) {
       let errorMessage = `Failed to fetch prices: ${response.statusText}`;
       let errorDetails = '';
-      
+
       try {
         const errorData = await response.json();
         errorMessage = errorData.error || errorMessage;
@@ -90,21 +90,21 @@ export async function fetchCryptoPrices(): Promise<CryptoPrice[]> {
           errorMessage = text;
         }
       }
-      
+
       // Handle rate limiting specifically
       if (response.status === 429) {
         throw new Error(errorDetails || 'Rate limit exceeded. Please wait a moment and refresh the page.');
       }
-      
+
       throw new Error(errorMessage);
     }
 
     const prices: CryptoPrice[] = await response.json();
-    
+
     if (!Array.isArray(prices)) {
       throw new Error('Invalid response format: expected array of prices');
     }
-    
+
     return prices;
   } catch (error) {
     // Re-throw with more context

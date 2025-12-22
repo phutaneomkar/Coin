@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CryptoPrice } from '@/types';
+import { CryptoPrice } from '../types';
 
 interface PriceStore {
   prices: Record<string, CryptoPrice>;

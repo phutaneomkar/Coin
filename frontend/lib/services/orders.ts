@@ -1,6 +1,6 @@
 import { SupabaseClient, PostgrestError } from '@supabase/supabase-js';
-import { createAdminClient } from '@/lib/supabase/admin';
-import { Order, Holding } from '@/types';
+import { createAdminClient } from '../../lib/supabase/admin';
+import { Order, Holding } from '../../types';
 
 const TRADING_FEE_RATE = 0.001; // 0.1% trading fee
 

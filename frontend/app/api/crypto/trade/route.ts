@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBinanceSymbol } from '@/lib/api/binance';
+import { getBinanceSymbol } from '../../../../lib/api/binance';
 
 /**
  * Binance Trading API Route

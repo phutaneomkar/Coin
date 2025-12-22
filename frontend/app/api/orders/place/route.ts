@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
-import { Holding, Order } from '@/types';
-import { executeOrder } from '@/lib/services/orders';
+import { createClient } from '../../../../lib/supabase/server';
+import { createAdminClient } from '../../../../lib/supabase/admin';
+import { Holding, Order } from '../../../../types';
+import { executeOrder } from '../../../../lib/services/orders';
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js';
 import crypto from 'crypto';
 

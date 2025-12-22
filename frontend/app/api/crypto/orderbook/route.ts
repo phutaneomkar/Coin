@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchBinanceOrderBook, getBinanceSymbol } from '@/lib/api/binance';
+import { fetchBinanceOrderBook, getBinanceSymbol } from '../../../../lib/api/binance';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,10 +16,10 @@ export async function GET(request: NextRequest) {
 
     // Decode the coinId
     const decodedCoinId = decodeURIComponent(coinId);
-    
+
     // Get Binance symbol for this coin
     const binanceSymbol = getBinanceSymbol(decodedCoinId);
-    
+
     if (!binanceSymbol) {
       return NextResponse.json(
         { error: 'Coin not supported on Binance', details: `Trading pair not found for ${decodedCoinId}` },
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     if (errorMessage.includes('Invalid symbol') || errorMessage.includes('404')) {
       return NextResponse.json(
         { error: 'Coin not found', details: 'The requested coin is not available on Binance.' },

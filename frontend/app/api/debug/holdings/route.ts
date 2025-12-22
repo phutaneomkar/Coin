@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '../../../../lib/supabase/server';
 
 /**
  * Debug endpoint to check holdings and orders
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     // If coinId provided, filter
     let filteredHoldings = allHoldings;
     let filteredOrders = allOrders;
-    
+
     if (coinId) {
       const normalizedCoinId = coinId.toLowerCase().trim();
       filteredHoldings = allHoldings?.filter(
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     // Check for zero-quantity holdings that should be deleted
     const zeroQuantityHoldings = allHoldings?.filter(h => parseFloat(h.quantity.toString()) <= 0) || [];
-    
+
     return NextResponse.json({
       success: true,
       user_id: user.id,
@@ -66,13 +66,13 @@ export async function GET(request: NextRequest) {
         holdings: holdingsError?.message,
         orders: ordersError?.message,
       },
-      note: zeroQuantityHoldings.length > 0 
+      note: zeroQuantityHoldings.length > 0
         ? `WARNING: Found ${zeroQuantityHoldings.length} holdings with 0 or negative quantity. These should be deleted.`
         : 'All holdings have quantity > 0',
     });
   } catch (error) {
     return NextResponse.json(
-      { 
+      {
         error: 'Internal server error',
         details: error instanceof Error ? error.message : 'Unknown error'
       },

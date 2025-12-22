@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '../../lib/supabase/client';
 import { toast } from 'react-hot-toast';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { LoadingSpinner } from '../shared/LoadingSpinner';
 
 export function LoginForm() {
   const [email, setEmail] = useState('');

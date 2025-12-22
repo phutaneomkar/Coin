@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchBinanceTicker, getBinanceSymbol } from '@/lib/api/binance';
-import type { CoinDetail } from '@/types';
+import { fetchBinanceTicker, getBinanceSymbol } from '../../../../lib/api/binance';
+import type { CoinDetail } from '../../../../types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,10 +16,10 @@ export async function GET(request: NextRequest) {
 
     // Decode the coinId in case it was URL encoded
     const decodedCoinId = decodeURIComponent(coinId);
-    
+
     // Get Binance symbol for this coin
     const binanceSymbol = getBinanceSymbol(decodedCoinId);
-    
+
     if (!binanceSymbol) {
       return NextResponse.json(
         { error: 'Coin not supported on Binance', details: `Trading pair not found for ${decodedCoinId}` },
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     // Handle 404 from Binance
     if (errorMessage.includes('Invalid symbol') || errorMessage.includes('404')) {
       return NextResponse.json(
@@ -94,13 +94,13 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to fetch coin details',
-        details: errorMessage.includes('Rate limit') 
+        details: errorMessage.includes('Rate limit')
           ? 'Rate limit exceeded. Please wait a moment and try again.'
           : 'Unable to fetch coin details. Please try again later.'
       },
-      { 
+      {
         status: 500,
         headers: {
           'Content-Type': 'application/json',

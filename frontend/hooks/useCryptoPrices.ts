@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { usePriceStore } from '@/store/priceStore';
+import { usePriceStore } from '../store/priceStore';
 
 export function useCryptoPrices() {
   const { setPrices, setLoading, setError } = usePriceStore();

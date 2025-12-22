@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '../../../../lib/supabase/server';
+import { createAdminClient } from '../../../../lib/supabase/admin';
 
 // Global sync lock to prevent concurrent syncs
 let isSyncing = false;
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   if (isSyncing && syncPromise) {
     return syncPromise;
   }
-  
+
   isSyncing = true;
   syncPromise = (async () => {
     try {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       if (!completedBuyOrders || completedBuyOrders.length === 0) {
         isSyncing = false;
         syncPromise = null;
-        return NextResponse.json({ 
+        return NextResponse.json({
           success: true,
           message: 'No completed buy orders found',
           synced: 0,
@@ -124,17 +124,17 @@ export async function POST(request: NextRequest) {
             // Only update if the calculated quantity from orders is different
             // This prevents duplicate syncing
             const existingQty = parseFloat(existingHolding.quantity.toString());
-            
+
             // If quantities match (within small tolerance), skip update
             const qtyDiff = Math.abs(existingQty - totalQuantity);
             if (qtyDiff < 0.00000001) {
               continue; // Skip this coin, already synced
             }
-            
+
             // Update existing holding - recalculate average price from all orders
             const existingAvgPrice = parseFloat(existingHolding.average_buy_price.toString());
             const existingCost = existingQty * existingAvgPrice;
-            
+
             const newQuantity = totalQuantity; // Use calculated quantity from orders
             const newTotalCost = totalCost; // Use calculated cost from orders
             const newAveragePrice = newQuantity > 0 ? newTotalCost / newQuantity : averageBuyPrice;
@@ -153,53 +153,53 @@ export async function POST(request: NextRequest) {
             } else {
               synced++;
             }
-        } else {
-          // Create new holding
-          let { error: insertError } = await supabase
-            .from('holdings')
-            .insert({
-              user_id: user.id,
-              coin_id: normalizedCoinId,
-              coin_symbol: coinSymbol || normalizedCoinId.toUpperCase(),
-              quantity: totalQuantity,
-              average_buy_price: averageBuyPrice,
-              last_updated: new Date().toISOString(),
-            });
+          } else {
+            // Create new holding
+            let { error: insertError } = await supabase
+              .from('holdings')
+              .insert({
+                user_id: user.id,
+                coin_id: normalizedCoinId,
+                coin_symbol: coinSymbol || normalizedCoinId.toUpperCase(),
+                quantity: totalQuantity,
+                average_buy_price: averageBuyPrice,
+                last_updated: new Date().toISOString(),
+              });
 
-          // If RLS blocks it, try with admin client
-          if (insertError && insertError.code === '42501') {
-            try {
-              const adminClient = createAdminClient();
-              const { error: adminError } = await adminClient
-                .from('holdings')
-                .insert({
-                  user_id: user.id,
-                  coin_id: normalizedCoinId,
-                  coin_symbol: coinSymbol || normalizedCoinId.toUpperCase(),
-                  quantity: totalQuantity,
-                  average_buy_price: averageBuyPrice,
-                  last_updated: new Date().toISOString(),
-                });
-              
-              if (adminError) {
-                insertError = adminError;
-              } else {
-                insertError = null;
-              }
-            } catch (adminErr) {
-              // If admin client not available, use original error
-              if (!(adminErr instanceof Error && adminErr.message.includes('SUPABASE_SERVICE_ROLE_KEY'))) {
-                insertError = adminErr as any;
+            // If RLS blocks it, try with admin client
+            if (insertError && insertError.code === '42501') {
+              try {
+                const adminClient = createAdminClient();
+                const { error: adminError } = await adminClient
+                  .from('holdings')
+                  .insert({
+                    user_id: user.id,
+                    coin_id: normalizedCoinId,
+                    coin_symbol: coinSymbol || normalizedCoinId.toUpperCase(),
+                    quantity: totalQuantity,
+                    average_buy_price: averageBuyPrice,
+                    last_updated: new Date().toISOString(),
+                  });
+
+                if (adminError) {
+                  insertError = adminError;
+                } else {
+                  insertError = null;
+                }
+              } catch (adminErr) {
+                // If admin client not available, use original error
+                if (!(adminErr instanceof Error && adminErr.message.includes('SUPABASE_SERVICE_ROLE_KEY'))) {
+                  insertError = adminErr as any;
+                }
               }
             }
-          }
 
-          if (insertError) {
-            errors.push(`Failed to create ${normalizedCoinId}: ${insertError.message}`);
-          } else {
-            synced++;
+            if (insertError) {
+              errors.push(`Failed to create ${normalizedCoinId}: ${insertError.message}`);
+            } else {
+              synced++;
+            }
           }
-        }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           errors.push(`Error processing ${normalizedCoinId}: ${errorMessage}`);
@@ -213,7 +213,7 @@ export async function POST(request: NextRequest) {
         totalOrders: completedBuyOrders.length,
         errors: errors.length > 0 ? errors : undefined,
       });
-      
+
       isSyncing = false;
       syncPromise = null;
       return result;
@@ -227,6 +227,6 @@ export async function POST(request: NextRequest) {
       );
     }
   })();
-  
+
   return syncPromise;
 }

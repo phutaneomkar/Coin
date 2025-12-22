@@ -2,15 +2,15 @@
 
 import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '../../lib/supabase/client';
 import { toast } from 'react-hot-toast';
-import { 
-  LogOut, 
-  User, 
-  TrendingUp, 
-  List, 
-  Zap, 
-  Menu, 
+import {
+  LogOut,
+  User,
+  TrendingUp,
+  List,
+  Zap,
+  Menu,
   X,
   Star
 } from 'lucide-react';
@@ -97,10 +97,9 @@ export function Sidebar() {
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={`
                     flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-colors
-                    ${
-                      isActive
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    ${isActive
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
                     }
                   `}
                 >

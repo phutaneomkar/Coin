@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
-import { Sidebar } from '@/components/dashboard/Sidebar';
-import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { Sidebar } from '../../components/dashboard/Sidebar';
+import { ErrorBoundary } from '../../components/shared/ErrorBoundary';
 
 export default function DashboardLayout({
   children,

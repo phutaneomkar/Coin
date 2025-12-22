@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '../../../../lib/supabase/server';
+import { createAdminClient } from '../../../../lib/supabase/admin';
 
 /**
  * Cleanup endpoint to remove zero-quantity holdings
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     // If there are still failed deletes, try fallback: delete by coin_id
     if (failedDeletes.length > 0) {
       console.log('Cleanup: Trying fallback delete for failed holdings', { count: failedDeletes.length });
-      
+
       try {
         const adminClient = createAdminClient();
         for (const { holding } of failedDeletes) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchBinanceKlines, getBinanceSymbol, getIntervalForTimeframe, getLimitForTimeframe } from '@/lib/api/binance';
+import { fetchBinanceKlines, getBinanceSymbol, getIntervalForTimeframe, getLimitForTimeframe } from '../../../../lib/api/binance';
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,10 +18,10 @@ export async function GET(request: NextRequest) {
 
     // Decode the coinId
     const decodedCoinId = decodeURIComponent(coinId);
-    
+
     // Get Binance symbol for this coin
     const binanceSymbol = getBinanceSymbol(decodedCoinId);
-    
+
     if (!binanceSymbol) {
       return NextResponse.json(
         { error: 'Coin not supported on Binance', details: `Trading pair not found for ${decodedCoinId}` },
@@ -55,13 +55,13 @@ export async function GET(request: NextRequest) {
     if (klines.length > 0) {
       const firstCandle = klines[0];
       const lastCandle = klines[klines.length - 1];
-      
+
       const opens = klines.map(k => parseFloat(k[1]));
       const highs = klines.map(k => parseFloat(k[2]));
       const lows = klines.map(k => parseFloat(k[3]));
       const closes = klines.map(k => parseFloat(k[4]));
       const totalVolume = klines.reduce((sum, k) => sum + parseFloat(k[5]), 0);
-      
+
       ohlc = {
         open: parseFloat(firstCandle[1]), // First candle's open
         high: Math.max(...highs), // Maximum high across all candles
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     // Handle 404 from Binance
     if (errorMessage.includes('Invalid symbol') || errorMessage.includes('404')) {
       return NextResponse.json(

@@ -9,7 +9,7 @@ import { CoinChart } from '../../../../../components/coins/CoinChart';
 import { TradingButtons } from '../../../../../components/coins/TradingButtons';
 import { OrderBook } from '../../../../../components/coins/OrderBook';
 import { TradeHistory } from '../../../../../components/coins/TradeHistory';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { LoadingSpinner } from '../../../../../components/shared/LoadingSpinner';
 
 interface CoinDetail {
   id: string;
