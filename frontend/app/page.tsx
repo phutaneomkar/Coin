@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { createClient } from '../lib/supabase/client';
+import { LoadingSpinner } from '../components/shared/LoadingSpinner';
 
 export default function HomePage() {
   const router = useRouter();

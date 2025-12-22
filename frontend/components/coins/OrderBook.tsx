@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getBinanceSymbol } from '@/lib/api/binance';
+import { getBinanceSymbol } from '../../lib/api/binance';
 
 interface OrderBookProps {
   coinId: string;
@@ -34,7 +34,7 @@ export function OrderBook({ coinId, coinSymbol, currentPrice }: OrderBookProps) 
         }
 
         const response = await fetch(`/api/crypto/orderbook?coinId=${encodeURIComponent(coinId)}&limit=20`);
-        
+
         if (!response.ok) {
           throw new Error('Failed to fetch order book');
         }
@@ -78,7 +78,7 @@ export function OrderBook({ coinId, coinSymbol, currentPrice }: OrderBookProps) 
     };
 
     fetchOrderBook();
-    
+
     // Refresh every 3 seconds for real-time feel
     const interval = setInterval(fetchOrderBook, 3000);
     return () => clearInterval(interval);
@@ -128,31 +128,28 @@ export function OrderBook({ coinId, coinSymbol, currentPrice }: OrderBookProps) 
       <div className="flex gap-2 mb-4">
         <button
           onClick={() => setFilter('all')}
-          className={`px-3 py-1 rounded text-sm transition-colors ${
-            filter === 'all'
+          className={`px-3 py-1 rounded text-sm transition-colors ${filter === 'all'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-          }`}
+            }`}
         >
           All
         </button>
         <button
           onClick={() => setFilter('bids')}
-          className={`px-3 py-1 rounded text-sm transition-colors ${
-            filter === 'bids'
+          className={`px-3 py-1 rounded text-sm transition-colors ${filter === 'bids'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-          }`}
+            }`}
         >
           Bids
         </button>
         <button
           onClick={() => setFilter('asks')}
-          className={`px-3 py-1 rounded text-sm transition-colors ${
-            filter === 'asks'
+          className={`px-3 py-1 rounded text-sm transition-colors ${filter === 'asks'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-          }`}
+            }`}
         >
           Asks
         </button>

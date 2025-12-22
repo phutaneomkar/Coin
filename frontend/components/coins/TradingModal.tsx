@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { usePriceStore } from '@/store/priceStore';
+import { createClient } from '../../lib/supabase/client';
+import { usePriceStore } from '../../store/priceStore';
 import { toast } from 'react-hot-toast';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { LoadingSpinner } from '../../components/shared/LoadingSpinner';
 import { X, RefreshCw } from 'lucide-react';
-import { OrderType, OrderMode } from '@/types';
+import { OrderType, OrderMode } from '../../types';
 
 interface TradingModalProps {
   isOpen: boolean;

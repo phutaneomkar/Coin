@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getBinanceSymbol } from '@/lib/api/binance';
+import { getBinanceSymbol } from '../../lib/api/binance';
 
 interface TradeHistoryProps {
   coinId: string;
@@ -34,7 +34,7 @@ export function TradeHistory({ coinId, coinSymbol }: TradeHistoryProps) {
         }
 
         const response = await fetch(`/api/crypto/trades?coinId=${encodeURIComponent(coinId)}&limit=50`);
-        
+
         if (!response.ok) {
           throw new Error('Failed to fetch trade history');
         }
@@ -60,7 +60,7 @@ export function TradeHistory({ coinId, coinSymbol }: TradeHistoryProps) {
     };
 
     fetchTradeHistory();
-    
+
     // Refresh every 3 seconds for real-time feel
     const interval = setInterval(fetchTradeHistory, 3000);
     return () => clearInterval(interval);
