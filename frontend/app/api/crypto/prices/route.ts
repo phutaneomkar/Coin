@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { fetchBinanceTickers, fetchBinanceExchangeInfo, getCoinIdFromSymbol } from '@/lib/api/binance';
-import { CryptoPrice } from '@/types';
+import { fetchBinanceTickers, fetchBinanceExchangeInfo, getCoinIdFromSymbol } from '../../../../lib/api/binance';
+import { CryptoPrice } from '../../../../types';
 
 // Use mainnet for market data to get all available coins
 // Testnet only has ~20 trading pairs, mainnet has thousands

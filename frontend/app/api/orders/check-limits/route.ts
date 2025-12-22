@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { fetchBinanceTicker, getBinanceSymbol } from '@/lib/api/binance';
+import { createClient } from '../../../../lib/supabase/server';
+import { fetchBinanceTicker, getBinanceSymbol } from '../../../../lib/api/binance';
 
 
 const TRADING_FEE_RATE = 0.001; // 0.1% trading fee
