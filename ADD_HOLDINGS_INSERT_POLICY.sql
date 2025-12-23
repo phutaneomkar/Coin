@@ -18,3 +18,5 @@ CREATE POLICY "Users can delete own holdings" ON holdings
 
 
 
+
+

@@ -137,7 +137,8 @@ export default function DashboardPage() {
   // Filter and sort coins
   const filteredAndSortedCoins = useMemo(() => {
     let filtered = priceArray.filter((coin) => {
-      if (!coin || !coin.current_price) return false;
+      // Strictly filter out coins with 0 or invalid price, or those that would display as $0.00 (< 0.01)
+      if (!coin || typeof coin.current_price !== 'number' || coin.current_price < 0.01) return false;
       const query = searchQuery.toLowerCase();
       const matchesSearch = (
         coin.name.toLowerCase().includes(query) ||

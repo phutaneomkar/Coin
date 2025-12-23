@@ -194,17 +194,54 @@ export function getCoinIdFromSymbol(symbol: string): string | null {
 
 /**
  * Fetch 24hr ticker statistics for all symbols
+ * Includes retry logic with exponential backoff for rate limiting
  */
-export async function fetchBinanceTickers(): Promise<BinanceTicker[]> {
-  const response = await fetch(`${BINANCE_API_BASE}/v3/ticker/24hr`, {
-    cache: 'no-store', // Response is too large for Next.js cache (>2MB)
-  });
+export async function fetchBinanceTickers(maxRetries: number = 3): Promise<BinanceTicker[]> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch(`${BINANCE_API_BASE}/v3/ticker/24hr`, {
+        cache: 'no-store', // Response is too large for Next.js cache (>2MB)
+      });
 
-  if (!response.ok) {
-    throw new Error(`Binance API error: ${response.statusText}`);
+      // Handle rate limiting (429) or server errors (5xx)
+      if (response.status === 429 || response.status === 418) {
+        const retryAfter = parseInt(response.headers.get('Retry-After') || '0') || Math.pow(2, attempt);
+        const waitTime = retryAfter * 1000; // Convert to milliseconds
+        
+        if (attempt < maxRetries - 1) {
+          // Wait before retrying with exponential backoff
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          continue;
+        }
+        throw new Error(`Rate limit exceeded. Please try again later.`);
+      }
+
+      if (!response.ok) {
+        // For other errors, throw immediately
+        throw new Error(`Binance API error: ${response.status} ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown error');
+      
+      // If it's a rate limit error and we have retries left, continue
+      if (lastError.message.includes('Rate limit') && attempt < maxRetries - 1) {
+        const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
+      }
+      
+      // For non-rate-limit errors or final attempt, throw
+      if (attempt === maxRetries - 1) {
+        throw lastError;
+      }
+    }
   }
-
-  return response.json();
+  
+  throw lastError || new Error('Failed to fetch Binance tickers');
 }
 
 /**
