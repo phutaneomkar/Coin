@@ -23,12 +23,13 @@ export function Sidebar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast.error(error.message);
-    } else {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
       toast.success('Logged out successfully');
       router.push('/login');
+      router.refresh();
+    } catch (error) {
+      toast.error('Logout failed');
     }
   };
 

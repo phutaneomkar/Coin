@@ -11,6 +11,7 @@ interface PriceStore {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   getPrice: (coinId: string) => CryptoPrice | null;
+  updatePrices: (prices: CryptoPrice[]) => void;
   clearPrices: () => void;
 }
 
@@ -46,6 +47,20 @@ export const usePriceStore = create<PriceStore>((set, get) => ({
   getPrice: (coinId) => {
     const state = get();
     return state.prices[coinId] || null;
+  },
+
+  updatePrices: (newPrices) => {
+    set((state) => {
+      const updatedPrices = { ...state.prices };
+      newPrices.forEach((price) => {
+        updatedPrices[price.id] = price;
+      });
+      return {
+        prices: updatedPrices,
+        lastUpdated: new Date().toISOString(),
+        error: null,
+      };
+    });
   },
 
   clearPrices: () => set({ prices: {}, lastUpdated: null, error: null }),

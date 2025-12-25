@@ -35,20 +35,28 @@ export default function WatchlistPage() {
       if (watchlist.length === 0) return;
 
       const missingCoins = watchlist.filter(
-        (item) => !prices[item.coin_id] || !prices[item.coin_id].current_price
+        (item) => {
+          // Check if price exists and has valid current_price
+          const price = prices[item.coin_id];
+          return !price || !price.current_price || price.current_price === 0;
+        }
       );
 
       if (missingCoins.length === 0) return;
 
       // Fetch prices for missing coins with batched concurrency
-      const batchSize = 10;
+      const batchSize = 3;
       for (let i = 0; i < missingCoins.length; i += batchSize) {
         const batch = missingCoins.slice(i, i + batchSize);
         await Promise.allSettled(
           batch.map(async (item) => {
+            if (!item.coin_id) return;
+            
+            const { setPrice } = usePriceStore.getState();
+            
             try {
+              // Handle USDT specially
               if (item.coin_id.toLowerCase() === 'tether' || item.coin_id.toLowerCase() === 'usdt') {
-                const { setPrice } = usePriceStore.getState();
                 const usdtPrice: CryptoPrice = {
                   id: item.coin_id,
                   symbol: 'USDT',
@@ -64,13 +72,22 @@ export default function WatchlistPage() {
                 return;
               }
 
-              const response = await fetch(`/api/crypto/coin-detail?coinId=${encodeURIComponent(item.coin_id)}`);
+              // Try fetching by coin_id first
+              let response = await fetch(`/api/crypto/coin-detail?coinId=${encodeURIComponent(item.coin_id)}`);
+              
+              // If that fails and we have a coin_symbol, try using that
+              if (!response.ok && item.coin_symbol && item.coin_symbol.toLowerCase() !== item.coin_id.toLowerCase()) {
+                response = await fetch(`/api/crypto/coin-detail?coinId=${encodeURIComponent(item.coin_symbol.toLowerCase())}`);
+              }
+              
               if (response.ok) {
                 const coinDetail = await response.json();
+                
+                // Use the coin_id from watchlist to maintain consistency
                 const cryptoPrice: CryptoPrice = {
-                  id: coinDetail.id,
+                  id: item.coin_id, // Use watchlist coin_id, not the one from API
                   symbol: coinDetail.symbol,
-                  name: coinDetail.name,
+                  name: coinDetail.name || item.coin_symbol || item.coin_id,
                   current_price: coinDetail.current_price,
                   price_change_24h: coinDetail.price_change_24h,
                   price_change_percentage_24h: coinDetail.price_change_percentage_24h,
@@ -78,14 +95,13 @@ export default function WatchlistPage() {
                   volume_24h: coinDetail.volume_24h,
                   last_updated: coinDetail.last_updated,
                 };
-                const { setPrice } = usePriceStore.getState();
                 setPrice(cryptoPrice);
-              } else if (response.status === 404) {
-                const { setPrice } = usePriceStore.getState();
+              } else {
+                // Coin not found or unavailable - set placeholder with price 0
                 const placeholderPrice: CryptoPrice = {
                   id: item.coin_id,
-                  symbol: item.coin_symbol,
-                  name: item.coin_id,
+                  symbol: item.coin_symbol || item.coin_id.toUpperCase(),
+                  name: item.coin_symbol || item.coin_id,
                   current_price: 0,
                   price_change_24h: 0,
                   price_change_percentage_24h: 0,
@@ -97,11 +113,26 @@ export default function WatchlistPage() {
               }
             } catch (error) {
               console.error(`Failed to fetch price for ${item.coin_id}:`, error);
+              // Set placeholder on error too
+              const placeholderPrice: CryptoPrice = {
+                id: item.coin_id,
+                symbol: item.coin_symbol || item.coin_id.toUpperCase(),
+                name: item.coin_symbol || item.coin_id,
+                current_price: 0,
+                price_change_24h: 0,
+                price_change_percentage_24h: 0,
+                market_cap: 0,
+                volume_24h: 0,
+                last_updated: new Date().toISOString(),
+              };
+              setPrice(placeholderPrice);
             }
           })
         );
+        
+        // Rate limiting: wait between batches
         if (i + batchSize < missingCoins.length) {
-          await new Promise((resolve) => setTimeout(resolve, 200));
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
       }
     };
@@ -267,6 +298,14 @@ export default function WatchlistPage() {
   );
 
   const formatPrice = (price: number) => {
+    if (price < 0.01 && price > 0) {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 6,
+        maximumFractionDigits: 8,
+      }).format(price);
+    }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',

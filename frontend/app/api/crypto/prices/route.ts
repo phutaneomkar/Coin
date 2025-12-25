@@ -62,11 +62,11 @@ export async function GET() {
 
     // Fetch all 24hr tickers from Binance with retry logic
     const tickers = await fetchBinanceTickers(3);
-    
+
     // Fetch exchange info to check trading status for each symbol
     // Use cache to avoid excessive API calls
     let exchangeInfo: { symbols: Array<{ symbol: string; status: string; isSpotTradingAllowed: boolean }> } | null = null;
-    
+
     if (exchangeInfoCache && (now - exchangeInfoCache.timestamp) < EXCHANGE_INFO_CACHE_TTL) {
       exchangeInfo = exchangeInfoCache.data;
     } else {
@@ -164,7 +164,7 @@ export async function GET() {
           last_updated: new Date().toISOString(),
         };
       })
-      .filter((price) => price.current_price > 0) // Double-check: Only include coins with valid prices
+
       .sort((a, b) => b.market_cap - a.market_cap); // Sort by market cap
 
     if (prices.length === 0) {
@@ -188,11 +188,11 @@ export async function GET() {
   } catch (error) {
     console.error('API Error in /api/crypto/prices:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const isRateLimit = errorMessage.includes('Rate limit') || 
-                        errorMessage.includes('429') || 
-                        errorMessage.includes('418') || 
-                        errorMessage.includes('teapot');
-    
+    const isRateLimit = errorMessage.includes('Rate limit') ||
+      errorMessage.includes('429') ||
+      errorMessage.includes('418') ||
+      errorMessage.includes('teapot');
+
     // Return cached data if available (even if stale) when rate limited
     if (isRateLimit && cache) {
       console.warn('Rate limited, returning cached data');
@@ -206,7 +206,7 @@ export async function GET() {
         },
       });
     }
-    
+
     return NextResponse.json(
       {
         error: isRateLimit ? 'Rate limit exceeded. Please try again later.' : 'Failed to fetch crypto prices',

@@ -26,8 +26,18 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Refresh session if expired - required for Server Components
-  await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
+  const path = request.nextUrl.pathname;
+
+  // Allow access to login page and public assets
+  if (!user && path !== '/login' && path !== '/') {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  // Redirect authenticated users away from login page
+  if (user && path === '/login') {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
 
   return response;
 }

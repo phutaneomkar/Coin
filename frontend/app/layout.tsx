@@ -17,6 +17,8 @@ export const metadata: Metadata = {
   description: "Real-time cryptocurrency trading dashboard for Indian market",
 };
 
+import { Toaster } from 'react-hot-toast';
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,8 +30,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-900 text-white`}
       >
         {children}
-        {/* <ToasterProvider /> */}
-
+        <Toaster position="top-right" />
       </body>
     </html>
   );
