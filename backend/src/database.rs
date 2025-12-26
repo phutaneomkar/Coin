@@ -86,6 +86,8 @@ impl Database {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(10)
             .acquire_timeout(Duration::from_secs(20))
+            .max_lifetime(Duration::from_secs(10 * 60))
+            .test_before_acquire(true)
             .connect_with(options)
             .await?;
 
@@ -101,6 +103,8 @@ impl Database {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(10)
             .acquire_timeout(Duration::from_secs(20))
+            .max_lifetime(Duration::from_secs(10 * 60))
+            .test_before_acquire(true)
             .connect_with(options)
             .await?;
 
