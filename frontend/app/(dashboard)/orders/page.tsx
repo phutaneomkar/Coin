@@ -10,6 +10,7 @@ import { usePriceStore } from '../../../store/priceStore';
 import { TradingModal } from '../../../components/coins/TradingModal';
 import { toast } from 'react-hot-toast';
 import { useCryptoPrices } from '../../../hooks/useCryptoPrices';
+import { DEFAULT_USER_ID } from '../../../lib/auth-utils';
 
 function OrdersContent() {
   // Enable real-time price updates
@@ -40,11 +41,106 @@ function OrdersContent() {
   // Check if we have action param (from buy/sell buttons)
   const hasActionParam = searchParams?.get('action') !== null;
 
+  const fetchUserBalance = useCallback(async () => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('balance_inr')
+        .eq('id', DEFAULT_USER_ID)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching balance:', error);
+        return;
+      }
+
+      if (profile) {
+        setUserBalance(parseFloat(profile.balance_inr?.toString() || '0'));
+      }
+    } catch (error) {
+      console.error('Error fetching balance:', error);
+    }
+  }, [supabase]);
+
+  const fetchHoldings = useCallback(async () => {
+    try {
+      const { data: holdings, error } = await supabase
+        .from('holdings')
+        .select('coin_id, quantity, average_buy_price, last_updated')
+        .eq('user_id', DEFAULT_USER_ID)
+        .gt('quantity', 0)
+        .order('last_updated', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching holdings:', error);
+        return;
+      }
+
+      const holdingsMap: Record<string, { quantity: number; average_buy_price: number }> = {};
+      if (holdings && holdings.length > 0) {
+        holdings.forEach(holding => {
+          const coinId = holding.coin_id?.toLowerCase()?.trim() || '';
+          if (coinId) {
+            const qty = parseFloat(holding.quantity.toString());
+            if (qty > 0 && !isNaN(qty)) {
+              holdingsMap[coinId] = {
+                quantity: qty,
+                average_buy_price: parseFloat(holding.average_buy_price.toString()),
+              };
+            }
+          }
+        });
+      }
+      setHoldingsData(holdingsMap);
+    } catch (error) {
+      console.error('Error fetching holdings:', error);
+    }
+  }, [supabase]);
+
+  const fetchOrders = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('user_id', DEFAULT_USER_ID)
+        .order('order_date', { ascending: false });
+
+      if (error) {
+        if (error.code === 'PGRST116' || error.message.includes('relation') || error.message.includes('does not exist')) {
+          console.error('Database tables not found.');
+          return;
+        }
+        throw error;
+      }
+
+      const pendingMarketOrders = (data || []).filter(
+        order => order.order_status === 'pending' && order.order_mode === 'market'
+      );
+
+      if (pendingMarketOrders.length > 0) {
+        const orderIds = pendingMarketOrders.map(order => order.id);
+        await supabase.from('orders').update({ order_status: 'completed' }).in('id', orderIds);
+        const { data: updatedData } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('user_id', DEFAULT_USER_ID)
+          .order('order_date', { ascending: false });
+        setOrders(updatedData || []);
+      } else {
+        setOrders(data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [supabase]);
+
   const refreshAll = useCallback(async () => {
     setIsRefreshing(true);
     await Promise.all([fetchOrders(), fetchHoldings(), fetchUserBalance()]);
     setIsRefreshing(false);
-  }, []);
+  }, [fetchOrders, fetchHoldings, fetchUserBalance]);
 
   useEffect(() => {
     refreshAll();
@@ -122,98 +218,6 @@ function OrdersContent() {
     };
   }, []);
 
-  // Fetch user balance
-  const fetchUserBalance = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('balance_inr')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Error fetching balance:', error);
-        return;
-      }
-
-      if (profile) {
-        setUserBalance(parseFloat(profile.balance_inr?.toString() || '0'));
-      }
-    } catch (error) {
-      console.error('Error fetching balance:', error);
-    }
-  };
-
-  // Fetch holdings from holdings table (aggregated)
-  const fetchHoldings = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      // Fetch only holdings with quantity > 0
-      // Add cache-busting by using a fresh client instance and explicit timestamp
-      const { data: holdings, error } = await supabase
-        .from('holdings')
-        .select('coin_id, quantity, average_buy_price, last_updated')
-        .eq('user_id', user.id)
-        .gt('quantity', 0) // Only fetch holdings with quantity > 0
-        .order('last_updated', { ascending: false }); // Order by last_updated to get fresh data
-
-      if (error) {
-        console.error('Error fetching holdings:', error);
-        return;
-      }
-
-      // Create a map of coin_id -> holdings data
-      const holdingsMap: Record<string, { quantity: number; average_buy_price: number }> = {};
-
-      if (holdings && holdings.length > 0) {
-        console.log('Portfolio: Fetched holdings from DB (quantity > 0)', {
-          count: holdings.length,
-          holdings,
-          timestamp: new Date().toISOString()
-        });
-
-        holdings.forEach(holding => {
-          const coinId = holding.coin_id?.toLowerCase()?.trim() || '';
-          if (coinId) {
-            const qty = parseFloat(holding.quantity.toString());
-            // Double-check: only add if quantity is truly > 0
-            if (qty > 0 && !isNaN(qty)) {
-              holdingsMap[coinId] = {
-                quantity: qty,
-                average_buy_price: parseFloat(holding.average_buy_price.toString()),
-              };
-            } else {
-              console.warn('Portfolio: Found holding with invalid quantity, skipping', { coinId, quantity: holding.quantity, parsed: qty });
-            }
-          }
-        });
-      } else {
-        console.log('Portfolio: No holdings found in database (quantity > 0)', { timestamp: new Date().toISOString() });
-      }
-
-      console.log('Portfolio: Holdings map created', {
-        holdingsMap,
-        count: Object.keys(holdingsMap).length,
-        keys: Object.keys(holdingsMap),
-        timestamp: new Date().toISOString()
-      });
-
-      setHoldingsData(holdingsMap);
-    } catch (error) {
-      console.error('Error fetching holdings:', error);
-    }
-  };
 
   // Fetch current prices for all orders and holdings (pending and completed for portfolio)
   useEffect(() => {
@@ -266,59 +270,6 @@ function OrdersContent() {
     }
   }, [orders, holdingsData, prices]);
 
-  const fetchOrders = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('order_date', { ascending: false });
-
-      if (error) {
-        // Check if it's a 404 (table doesn't exist)
-        if (error.code === 'PGRST116' || error.message.includes('relation') || error.message.includes('does not exist')) {
-          console.error('Database tables not found. Please run the schema.sql in Supabase SQL Editor.');
-          console.error('See SETUP_DATABASE.md for instructions.');
-          return;
-        }
-        throw error;
-      }
-
-      // Auto-complete pending market orders (they should execute immediately)
-      const pendingMarketOrders = (data || []).filter(
-        order => order.order_status === 'pending' && order.order_mode === 'market'
-      );
-
-      if (pendingMarketOrders.length > 0) {
-        const orderIds = pendingMarketOrders.map(order => order.id);
-        await supabase
-          .from('orders')
-          .update({ order_status: 'completed' })
-          .in('id', orderIds);
-
-        // Refresh orders after update
-        const { data: updatedData } = await supabase
-          .from('orders')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('order_date', { ascending: false });
-
-        setOrders(updatedData || []);
-      } else {
-        setOrders(data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching orders:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // Calculate portfolio data - ONLY use holdings table data (no fallback to orders)
   // This ensures that cleaned-up holdings don't reappear from old orders

@@ -51,10 +51,26 @@ export const usePriceStore = create<PriceStore>((set, get) => ({
 
   updatePrices: (newPrices) => {
     set((state) => {
+      // Only update if prices actually changed to avoid unnecessary re-renders
+      let hasChanges = false;
       const updatedPrices = { ...state.prices };
+      
       newPrices.forEach((price) => {
-        updatedPrices[price.id] = price;
+        const existing = updatedPrices[price.id];
+        // Check if price actually changed
+        if (!existing || 
+            existing.current_price !== price.current_price ||
+            existing.price_change_percentage_24h !== price.price_change_percentage_24h) {
+          updatedPrices[price.id] = price;
+          hasChanges = true;
+        }
       });
+
+      // Only update state if there were actual changes
+      if (!hasChanges) {
+        return state;
+      }
+
       return {
         prices: updatedPrices,
         lastUpdated: new Date().toISOString(),

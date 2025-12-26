@@ -104,13 +104,17 @@ export function useCryptoPrices() {
     }
   }, [handleMessage, setError]);
 
+  // Track if initial fetch has been done
+  const hasInitialFetchRef = useRef(false);
+
   // Initial fetch via REST API to populate data quickly while WS connects
   useEffect(() => {
     isMountedRef.current = true;
 
     const fetchInitialData = async () => {
-      // Only fetch if we don't have prices yet
-      if (Object.keys(prices).length > 0) return;
+      // Only fetch once on mount
+      if (hasInitialFetchRef.current) return;
+      hasInitialFetchRef.current = true;
 
       try {
         setLoading(true);
@@ -142,5 +146,5 @@ export function useCryptoPrices() {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [connectWebSocket, prices, setLoading, setPrices]);
+  }, [connectWebSocket, setLoading, setPrices]);
 }

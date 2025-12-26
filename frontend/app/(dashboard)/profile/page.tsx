@@ -6,6 +6,7 @@ import { User } from '../../../types';
 import { LoadingSpinner } from '../../../components/shared/LoadingSpinner';
 import { toast } from 'react-hot-toast';
 import { Plus } from 'lucide-react';
+import { DEFAULT_USER_ID } from '../../../lib/auth-utils';
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<User | null>(null);
@@ -20,17 +21,11 @@ export default function ProfilePage() {
 
   const fetchProfile = async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
-        .single();
+        .eq('id', DEFAULT_USER_ID)
+        .maybeSingle();
 
       if (error) {
         // Check if it's a 404 (table doesn't exist)
@@ -41,7 +36,30 @@ export default function ProfilePage() {
         }
         throw error;
       }
-      setProfile(data);
+
+      if (!data) {
+        // Auto-create default profile if it doesn't exist
+        console.log('Creating default profile...');
+        const { data: newProfile, error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: DEFAULT_USER_ID,
+            email: 'investor@coin.local',
+            full_name: 'Default Investor',
+            balance_inr: 0,
+            kyc_status: 'verified'
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error('Error creating default profile:', insertError);
+          return;
+        }
+        setProfile(newProfile);
+      } else {
+        setProfile(data);
+      }
     } catch (error) {
       console.error('Error fetching profile:', error);
     } finally {
@@ -65,20 +83,11 @@ export default function ProfilePage() {
     setIsAddingBalance(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        toast.error('Please login');
-        return;
-      }
-
       // Get current balance
       const { data: currentProfile, error: fetchError } = await supabase
         .from('profiles')
         .select('balance_inr')
-        .eq('id', user.id)
+        .eq('id', DEFAULT_USER_ID)
         .single();
 
       if (fetchError) {
@@ -91,7 +100,7 @@ export default function ProfilePage() {
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ balance_inr: newBalance })
-        .eq('id', user.id);
+        .eq('id', DEFAULT_USER_ID);
 
       if (updateError) {
         throw updateError;

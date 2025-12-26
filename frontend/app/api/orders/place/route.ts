@@ -4,6 +4,8 @@ import { createAdminClient } from '../../../../lib/supabase/admin';
 import { Holding, Order } from '../../../../types';
 import { executeOrder } from '../../../../lib/services/orders';
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
+import { DEFAULT_USER_ID } from '../../../../lib/auth-utils';
 import crypto from 'crypto';
 
 const COINDCX_API_URL = process.env.COINDCX_API_URL || 'https://api.coindcx.com';
@@ -17,14 +19,15 @@ function generateSignature(secret: string, body: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const cookieStore = await cookies();
+    const hasAccess = cookieStore.get('app_access');
 
-    if (!user) {
+    if (!hasAccess) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const userId = DEFAULT_USER_ID;
+    const supabase = await createClient();
 
     const useTestAPI = process.env.USE_TEST_API === 'true' || process.env.NODE_ENV === 'development';
 
@@ -57,7 +60,7 @@ export async function POST(request: NextRequest) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('balance_inr')
-          .eq('id', user.id)
+          .eq('id', userId)
           .single();
 
         if (!profile) {
@@ -72,7 +75,7 @@ export async function POST(request: NextRequest) {
         const { data: pendingOrders } = await supabase
           .from('orders')
           .select('total_amount, quantity, price_per_unit')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('order_status', 'pending')
           .eq('order_type', 'buy');
 
@@ -105,7 +108,7 @@ export async function POST(request: NextRequest) {
         let { data: holding, error: holdingError } = await supabase
           .from('holdings')
           .select('quantity, coin_id')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('coin_id', normalizedCoinId)
           .maybeSingle();
 
@@ -114,7 +117,7 @@ export async function POST(request: NextRequest) {
           const { data: ciHolding } = await supabase
             .from('holdings')
             .select('quantity, coin_id')
-            .eq('user_id', user.id)
+            .eq('user_id', userId)
             .ilike('coin_id', normalizedCoinId)
             .maybeSingle();
           if (ciHolding) {
@@ -128,7 +131,7 @@ export async function POST(request: NextRequest) {
         const { data: pendingOrders } = await supabase
           .from('orders')
           .select('quantity')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('order_status', 'pending')
           .eq('order_type', 'sell')
           .ilike('coin_id', normalizedCoinId); // Match coin ID case-insensitive
@@ -155,7 +158,7 @@ export async function POST(request: NextRequest) {
       const { data: order, error } = await supabase
         .from('orders')
         .insert({
-          user_id: user.id,
+          user_id: userId,
           coin_id: normalizedCoinId, // Use normalized coin_id
           coin_symbol: orderData.coin_symbol,
           order_type: orderData.side,
@@ -193,7 +196,7 @@ export async function POST(request: NextRequest) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               id: order.id,
-              user_id: user.id,
+              user_id: userId,
               coin_id: normalizedCoinId,
               coin_symbol: orderData.coin_symbol,
               order_type: orderData.side, // "buy" or "sell"
@@ -216,7 +219,7 @@ export async function POST(request: NextRequest) {
           quantity: order.quantity,
         });
         try {
-          await executeOrder(supabase, user.id, order, effectivePrice);
+          await executeOrder(supabase, userId, order, effectivePrice);
           console.log('Place order: Order executed successfully');
         } catch (executeError) {
           console.error('Place order: Error executing order', executeError);
@@ -281,7 +284,7 @@ export async function POST(request: NextRequest) {
     // Normalize coin_id for consistency
     const normalizedCoinId = (orderData.coin_id || '').toLowerCase().trim();
     const { error: dbError } = await supabase.from('orders').insert({
-      user_id: user.id,
+      user_id: userId,
       coin_id: normalizedCoinId, // Use normalized coin_id
       coin_symbol: orderData.coin_symbol,
       order_type: orderData.side,

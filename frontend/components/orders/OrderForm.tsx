@@ -7,6 +7,7 @@ import { usePriceStore } from '../../store/priceStore';
 import { toast } from 'react-hot-toast';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { OrderType, OrderMode } from '../../types';
+import { DEFAULT_USER_ID } from '../../lib/auth-utils';
 
 interface OrderFormProps {
   onOrderPlaced: () => void;
@@ -44,18 +45,14 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        if (!user) return;
+        const userId = DEFAULT_USER_ID;
 
         // Fetch profile (balance)
         const { data: profile } = await supabase
           .from('profiles')
           .select('balance_inr')
-          .eq('id', user.id)
-          .single();
+          .eq('id', userId)
+          .maybeSingle();
 
         let rawBalance = profile?.balance_inr || 0;
 
@@ -63,9 +60,9 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
         const { data: holding } = await supabase
           .from('holdings')
           .select('quantity')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('coin_id', coinId)
-          .single();
+          .maybeSingle();
 
         let rawHoldings = holding?.quantity || 0;
 
@@ -73,7 +70,7 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
         const { data: pendingOrders } = await supabase
           .from('orders')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('order_status', 'pending');
 
         let lockedBalance = 0;
@@ -118,14 +115,7 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
     setIsLoading(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        toast.error('Please login to place orders');
-        return;
-      }
+      const userId = DEFAULT_USER_ID;
 
       const qty = parseFloat(quantity);
       if (isNaN(qty) || qty <= 0) {
@@ -166,8 +156,8 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('balance_inr')
-          .eq('id', user.id)
-          .single();
+          .eq('id', userId)
+          .maybeSingle();
 
         if (!profile) {
           toast.error('User profile not found');
@@ -185,9 +175,9 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
         const { data: holding } = await supabase
           .from('holdings')
           .select('quantity')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('coin_id', coinId)
-          .single();
+          .maybeSingle();
 
         if (!holding || holding.quantity < qty) {
           const available = holding?.quantity || 0;

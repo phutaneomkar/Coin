@@ -7,6 +7,7 @@ import { toast } from 'react-hot-toast';
 import { LoadingSpinner } from '../../components/shared/LoadingSpinner';
 import { X, RefreshCw } from 'lucide-react';
 import { OrderType, OrderMode } from '../../types';
+import { DEFAULT_USER_ID } from '../../lib/auth-utils';
 
 interface TradingModalProps {
   isOpen: boolean;
@@ -41,21 +42,13 @@ export function TradingModal({
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        if (!user) {
-          setUserBalance(0);
-          setUserHoldings(0);
-          return;
-        }
+        const userId = DEFAULT_USER_ID;
 
         // 1. Fetch raw balance
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('balance_inr')
-          .eq('id', user.id)
+          .eq('id', userId)
           .maybeSingle();
 
         let rawBalance = parseFloat(profile?.balance_inr?.toString() || '0');
@@ -68,7 +61,7 @@ export function TradingModal({
         let { data: holding } = await supabase
           .from('holdings')
           .select('quantity')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('coin_id', normalizedCoinId)
           .maybeSingle();
 
@@ -79,7 +72,7 @@ export function TradingModal({
           const { data: allHoldings } = await supabase
             .from('holdings')
             .select('quantity, coin_id')
-            .eq('user_id', user.id);
+            .eq('user_id', userId);
 
           const match = allHoldings?.find(h => h.coin_id?.toLowerCase() === normalizedCoinId);
           if (match) {
@@ -91,7 +84,7 @@ export function TradingModal({
         const { data: pendingOrders } = await supabase
           .from('orders')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('order_status', 'pending');
 
         let lockedBalance = 0;
@@ -150,14 +143,7 @@ export function TradingModal({
     setIsLoading(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        toast.error('Please login to place orders');
-        return;
-      }
+      const userId = DEFAULT_USER_ID;
 
       const qty = parseFloat(quantity);
       if (isNaN(qty) || qty <= 0) {
@@ -198,8 +184,8 @@ export function TradingModal({
         const { data: profile } = await supabase
           .from('profiles')
           .select('balance_inr')
-          .eq('id', user.id)
-          .single();
+          .eq('id', userId)
+          .maybeSingle();
 
         if (!profile) {
           toast.error('User profile not found');
@@ -220,7 +206,7 @@ export function TradingModal({
         let { data: holding, error: holdingError } = await supabase
           .from('holdings')
           .select('quantity, coin_id')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('coin_id', normalizedCoinId)
           .maybeSingle();
 
@@ -229,7 +215,7 @@ export function TradingModal({
           const { data: allHoldings } = await supabase
             .from('holdings')
             .select('quantity, coin_id')
-            .eq('user_id', user.id);
+            .eq('user_id', userId);
 
           if (allHoldings) {
             holding = allHoldings.find(
@@ -287,82 +273,76 @@ export function TradingModal({
       setPrice('');
 
       // Refresh user data after order placement
-      const {
-        data: { user: refreshedUser },
-      } = await supabase.auth.getUser();
+      // Refresh balance
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('balance_inr')
+        .eq('id', userId)
+        .maybeSingle();
+      if (profile) {
+        setUserBalance(parseFloat(profile.balance_inr?.toString() || '0'));
+      }
 
-      if (refreshedUser) {
-        // Refresh balance
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('balance_inr')
-          .eq('id', refreshedUser.id)
-          .maybeSingle();
-        if (profile) {
-          setUserBalance(parseFloat(profile.balance_inr?.toString() || '0'));
-        }
+      // Refresh holdings (sync will happen automatically on orders page)
+      // Don't call sync here to avoid loops
+      const normalizedCoinId = coinId.toLowerCase().trim();
+      let { data: holding } = await supabase
+        .from('holdings')
+        .select('quantity, coin_id')
+        .eq('user_id', userId)
+        .eq('coin_id', normalizedCoinId)
+        .maybeSingle();
 
-        // Refresh holdings (sync will happen automatically on orders page)
-        // Don't call sync here to avoid loops
-        const normalizedCoinId = coinId.toLowerCase().trim();
-        let { data: holding } = await supabase
+      // If not found, try case-insensitive search
+      if (!holding) {
+        const { data: allHoldings } = await supabase
           .from('holdings')
           .select('quantity, coin_id')
-          .eq('user_id', refreshedUser.id)
-          .eq('coin_id', normalizedCoinId)
-          .maybeSingle();
+          .eq('user_id', userId);
 
-        // If not found, try case-insensitive search
-        if (!holding) {
-          const { data: allHoldings } = await supabase
-            .from('holdings')
-            .select('quantity, coin_id')
-            .eq('user_id', refreshedUser.id);
-
-          if (allHoldings) {
-            holding = allHoldings.find(
-              (h: { quantity: any; coin_id: any }) => h.coin_id?.toLowerCase() === normalizedCoinId
-            ) ?? null;
-          }
+        if (allHoldings) {
+          holding = allHoldings.find(
+            (h: { quantity: any; coin_id: any }) => h.coin_id?.toLowerCase() === normalizedCoinId
+          ) ?? null;
         }
+      }
 
-        if (holding && holding.quantity) {
-          const qty = parseFloat(holding.quantity.toString());
-          setUserHoldings(qty);
-          console.log('TradingModal: Refreshed holdings after order', { qty, holding });
-        } else {
-          setUserHoldings(0);
-          console.log('TradingModal: No holdings found after order refresh');
+      if (holding && holding.quantity) {
+        const qty = parseFloat(holding.quantity.toString());
+        setUserHoldings(qty);
+        console.log('TradingModal: Refreshed holdings after order', { qty, holding });
+      } else {
+        setUserHoldings(0);
+        console.log('TradingModal: No holdings found after order refresh');
 
-          // If it's a buy order, try syncing holdings
-          if (orderType === 'buy' && orderMode === 'market') {
-            console.log('TradingModal: Attempting to sync holdings after buy order');
-            try {
-              const syncResponse = await fetch('/api/orders/sync-holdings', { method: 'POST' });
-              const syncData = await syncResponse.json();
-              if (syncData.success) {
-                console.log('TradingModal: Sync successful', syncData);
-                // Wait a bit then refresh again
-                await new Promise(resolve => setTimeout(resolve, 500));
+        // If it's a buy order, try syncing holdings
+        if (orderType === 'buy' && orderMode === 'market') {
+          console.log('TradingModal: Attempting to sync holdings after buy order');
+          try {
+            const syncResponse = await fetch('/api/orders/sync-holdings', { method: 'POST' });
+            const syncData = await syncResponse.json();
+            if (syncData.success) {
+              console.log('TradingModal: Sync successful', syncData);
+              // Wait a bit then refresh again
+              await new Promise(resolve => setTimeout(resolve, 500));
 
-                // Re-fetch holdings
-                const normalizedCoinId = coinId.toLowerCase().trim();
-                const { data: refreshedHolding } = await supabase
-                  .from('holdings')
-                  .select('quantity, coin_id')
-                  .eq('user_id', refreshedUser.id)
-                  .eq('coin_id', normalizedCoinId)
-                  .maybeSingle();
+              // Re-fetch holdings
+              const refreshedNormalizedCoinId = coinId.toLowerCase().trim();
+              const { data: refreshedHolding } = await supabase
+                .from('holdings')
+                .select('quantity, coin_id')
+                .eq('user_id', userId)
+                .eq('coin_id', refreshedNormalizedCoinId)
+                .maybeSingle();
 
-                if (refreshedHolding && refreshedHolding.quantity) {
-                  const qty = parseFloat(refreshedHolding.quantity.toString());
-                  setUserHoldings(qty);
-                  console.log('TradingModal: Found holdings after sync', { qty });
-                }
+              if (refreshedHolding && refreshedHolding.quantity) {
+                const qty = parseFloat(refreshedHolding.quantity.toString());
+                setUserHoldings(qty);
+                console.log('TradingModal: Found holdings after sync', { qty });
               }
-            } catch (syncError) {
-              console.error('TradingModal: Sync error', syncError);
             }
+          } catch (syncError) {
+            console.error('TradingModal: Sync error', syncError);
           }
         }
       }
@@ -425,48 +405,44 @@ export function TradingModal({
               onClick={async () => {
                 try {
                   // Just refresh user data without syncing (sync should be done manually on orders page)
-                  const {
-                    data: { user },
-                  } = await supabase.auth.getUser();
-                  if (user) {
-                    const { data: profile } = await supabase
-                      .from('profiles')
-                      .select('balance_inr')
-                      .eq('id', user.id)
-                      .maybeSingle();
-                    if (profile) {
-                      setUserBalance(parseFloat(profile.balance_inr?.toString() || '0'));
-                    }
+                  const userId = DEFAULT_USER_ID;
+                  const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('balance_inr')
+                    .eq('id', userId)
+                    .maybeSingle();
+                  if (profile) {
+                    setUserBalance(parseFloat(profile.balance_inr?.toString() || '0'));
+                  }
 
-                    const normalizedCoinId = coinId.toLowerCase().trim();
-                    let { data: holding } = await supabase
+                  const normalizedCoinId = coinId.toLowerCase().trim();
+                  let { data: holding } = await supabase
+                    .from('holdings')
+                    .select('quantity, coin_id')
+                    .eq('user_id', userId)
+                    .eq('coin_id', normalizedCoinId)
+                    .maybeSingle();
+
+                  // If not found, try case-insensitive search
+                  if (!holding) {
+                    const { data: allHoldings } = await supabase
                       .from('holdings')
                       .select('quantity, coin_id')
-                      .eq('user_id', user.id)
-                      .eq('coin_id', normalizedCoinId)
-                      .maybeSingle();
-
-                    // If not found, try case-insensitive search
-                    if (!holding) {
-                      const { data: allHoldings } = await supabase
-                        .from('holdings')
-                        .select('quantity, coin_id')
-                        .eq('user_id', user.id);
-                      if (allHoldings) {
-                        holding = allHoldings.find(
-                          (h: { quantity: any; coin_id: any }) => h.coin_id?.toLowerCase() === normalizedCoinId
-                        ) ?? null;
-                      }
+                      .eq('user_id', userId);
+                    if (allHoldings) {
+                      holding = allHoldings.find(
+                        (h: { quantity: any; coin_id: any }) => h.coin_id?.toLowerCase() === normalizedCoinId
+                      ) ?? null;
                     }
+                  }
 
-                    if (holding && holding.quantity) {
-                      const qty = parseFloat(holding.quantity.toString());
-                      setUserHoldings(qty);
-                      toast.success(`Holdings refreshed: ${qty} ${coinSymbol}`);
-                    } else {
-                      setUserHoldings(0);
-                      toast.success('Holdings refreshed');
-                    }
+                  if (holding && holding.quantity) {
+                    const qty = parseFloat(holding.quantity.toString());
+                    setUserHoldings(qty);
+                    toast.success(`Holdings refreshed: ${qty} ${coinSymbol}`);
+                  } else {
+                    setUserHoldings(0);
+                    toast.success('Holdings refreshed');
                   }
                 } catch (error) {
                   console.error('Error refreshing holdings:', error);

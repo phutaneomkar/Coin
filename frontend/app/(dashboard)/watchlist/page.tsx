@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '../../../lib/supabase/client';
 import { usePriceStore } from '../../../store/priceStore';
@@ -9,6 +9,7 @@ import { LoadingSpinner } from '../../../components/shared/LoadingSpinner';
 import { Plus, X, Search, TrendingUp, TrendingDown, ArrowUpDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useCryptoPrices } from '../../../hooks/useCryptoPrices';
+import { DEFAULT_USER_ID } from '../../../lib/auth-utils';
 
 type SortField = 'name' | 'price' | 'change';
 type SortDirection = 'asc' | 'desc';
@@ -19,17 +20,49 @@ export default function WatchlistPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [newCoin, setNewCoin] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+
+  // Debounce search query to avoid excessive filtering
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const supabase = createClient();
   const { prices } = usePriceStore();
   useCryptoPrices();
 
+  const fetchWatchlist = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('watchlist')
+        .select('*')
+        .eq('user_id', DEFAULT_USER_ID)
+        .order('added_at', { ascending: false });
+
+      if (error) {
+        if (error.code === 'PGRST116' || error.message.includes('relation') || error.message.includes('does not exist')) {
+          console.error('Database tables not found.');
+          return;
+        }
+        throw error;
+      }
+      setWatchlist(data || []);
+    } catch (error) {
+      console.error('Error fetching watchlist:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [supabase]);
+
   useEffect(() => {
     fetchWatchlist();
-  }, []);
+  }, [fetchWatchlist]);
 
-  // Fetch prices for coins not in the store
+  // Fetch prices for coins not in the store (debounced and optimized)
   useEffect(() => {
     const fetchMissingPrices = async () => {
       if (watchlist.length === 0) return;
@@ -44,16 +77,16 @@ export default function WatchlistPage() {
 
       if (missingCoins.length === 0) return;
 
-      // Fetch prices for missing coins with batched concurrency
-      const batchSize = 3;
+      const { setPrice } = usePriceStore.getState();
+
+      // Fetch prices for missing coins with batched concurrency (increased batch size)
+      const batchSize = 5;
       for (let i = 0; i < missingCoins.length; i += batchSize) {
         const batch = missingCoins.slice(i, i + batchSize);
         await Promise.allSettled(
           batch.map(async (item) => {
             if (!item.coin_id) return;
-            
-            const { setPrice } = usePriceStore.getState();
-            
+
             try {
               // Handle USDT specially
               if (item.coin_id.toLowerCase() === 'tether' || item.coin_id.toLowerCase() === 'usdt') {
@@ -74,15 +107,15 @@ export default function WatchlistPage() {
 
               // Try fetching by coin_id first
               let response = await fetch(`/api/crypto/coin-detail?coinId=${encodeURIComponent(item.coin_id)}`);
-              
+
               // If that fails and we have a coin_symbol, try using that
               if (!response.ok && item.coin_symbol && item.coin_symbol.toLowerCase() !== item.coin_id.toLowerCase()) {
                 response = await fetch(`/api/crypto/coin-detail?coinId=${encodeURIComponent(item.coin_symbol.toLowerCase())}`);
               }
-              
+
               if (response.ok) {
                 const coinDetail = await response.json();
-                
+
                 // Use the coin_id from watchlist to maintain consistency
                 const cryptoPrice: CryptoPrice = {
                   id: item.coin_id, // Use watchlist coin_id, not the one from API
@@ -129,50 +162,24 @@ export default function WatchlistPage() {
             }
           })
         );
-        
-        // Rate limiting: wait between batches
+
+        // Rate limiting: wait between batches (reduced delay)
         if (i + batchSize < missingCoins.length) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
       }
     };
 
-    // Only fetch if watchlist has items and we're not loading
-    if (!isLoading && watchlist.length > 0) {
-      fetchMissingPrices();
-    }
+    // Debounce the fetch to avoid excessive calls
+    const timeoutId = setTimeout(() => {
+      if (!isLoading && watchlist.length > 0) {
+        fetchMissingPrices();
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
   }, [watchlist, prices, isLoading]);
 
-  const fetchWatchlist = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('watchlist')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('added_at', { ascending: false });
-
-      if (error) {
-        // Check if it's a 404 (table doesn't exist)
-        if (error.code === 'PGRST116' || error.message.includes('relation') || error.message.includes('does not exist')) {
-          console.error('Database tables not found. Please run the schema.sql in Supabase SQL Editor.');
-          console.error('See SETUP_DATABASE.md for instructions.');
-          return;
-        }
-        throw error;
-      }
-      setWatchlist(data || []);
-    } catch (error) {
-      console.error('Error fetching watchlist:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const addToWatchlist = async () => {
     if (!newCoin.trim()) {
@@ -181,20 +188,11 @@ export default function WatchlistPage() {
     }
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        toast.error('Please login');
-        return;
-      }
-
       const coinId = newCoin.toLowerCase().trim();
       const coinSymbol = prices[coinId]?.symbol || coinId.toUpperCase();
 
       const { error } = await supabase.from('watchlist').insert({
-        user_id: user.id,
+        user_id: DEFAULT_USER_ID,
         coin_id: coinId,
         coin_symbol: coinSymbol,
       });
@@ -232,7 +230,8 @@ export default function WatchlistPage() {
   // Filter and sort watchlist
   const filteredAndSortedWatchlist = useMemo(() => {
     let filtered = watchlist.filter((item) => {
-      const query = searchQuery.toLowerCase();
+      const query = debouncedSearchQuery.toLowerCase();
+      if (!query) return true;
       return (
         item.coin_symbol.toLowerCase().includes(query) ||
         item.coin_id.toLowerCase().includes(query)
@@ -274,7 +273,7 @@ export default function WatchlistPage() {
     });
 
     return filtered;
-  }, [watchlist, prices, searchQuery, sortField, sortDirection]);
+  }, [watchlist, prices, debouncedSearchQuery, sortField, sortDirection]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {

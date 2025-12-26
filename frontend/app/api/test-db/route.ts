@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '../../../lib/supabase/server';
+import { DEFAULT_USER_ID } from '../../../lib/auth-utils';
 
 export async function GET() {
   const supabase = await createClient();
@@ -14,24 +15,19 @@ export async function GET() {
   };
 
   try {
-    // 1. Check authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      results.errors.push('Not authenticated. Please login first.');
-      return NextResponse.json(results);
-    }
+    // 1. Check authentication (Using Default User ID)
+    const userId = DEFAULT_USER_ID;
 
     results.connection = true;
-    results.details.user = { id: user.id, email: user.email };
+    results.details.user = { id: userId, isDefault: true };
 
     // 2. Check if tables exist by trying to query them
     try {
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
-        .single();
+        .eq('id', userId)
+        .maybeSingle();
 
       if (profileError) {
         if (profileError.code === 'PGRST116') {
@@ -57,7 +53,7 @@ export async function GET() {
       const { data: watchlist, error: watchlistError } = await supabase
         .from('watchlist')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .limit(1);
 
       if (watchlistError) {
@@ -79,7 +75,7 @@ export async function GET() {
       const { data: orders, error: ordersError } = await supabase
         .from('orders')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .limit(1);
 
       if (ordersError) {
@@ -103,7 +99,7 @@ export async function GET() {
         const { data: testWatchlist, error: insertError } = await supabase
           .from('watchlist')
           .insert({
-            user_id: user.id,
+            user_id: userId,
             coin_id: testCoinId,
             coin_symbol: 'TEST',
           })

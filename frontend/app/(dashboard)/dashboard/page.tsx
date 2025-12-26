@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, memo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCryptoPrices } from '../../../hooks/useCryptoPrices';
 import { usePriceStore } from '../../../store/priceStore';
 import { LoadingSpinner } from '../../../components/shared/LoadingSpinner';
 import { TrendingUp, TrendingDown, Star, Search, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { createClient } from '../../../lib/supabase/client';
+import { DEFAULT_USER_ID } from '../../../lib/auth-utils';
+import { CryptoPrice } from '../../../types';
 
 type SortField = 'name' | 'price' | 'change' | 'market_cap' | 'volume';
 type SortDirection = 'asc' | 'desc';
@@ -23,55 +26,140 @@ export default function DashboardPage() {
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
   const [watchlistLoading, setWatchlistLoading] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const supabase = createClient();
   const itemsPerPage = 10;
 
-  // Watchlist mock function
+  // Fetch watchlist on mount
+  useEffect(() => {
+    const fetchWatchlist = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('watchlist')
+          .select('coin_id')
+          .eq('user_id', DEFAULT_USER_ID);
+
+        if (!error && data) {
+          setWatchlistIds(new Set(data.map(item => item.coin_id)));
+        }
+      } catch (error) {
+        console.error('Error fetching watchlist:', error);
+      }
+    };
+    fetchWatchlist();
+  }, [supabase]);
+
+  // Watchlist toggle function
   const toggleWatchlist = async (coinId: string, coinSymbol: string) => {
-    toast('Watchlist is disabled for No-DB Auth.', { icon: '🔒' });
+    if (watchlistLoading) return;
+    setWatchlistLoading(coinId);
+
+    try {
+      const isWatched = watchlistIds.has(coinId);
+
+      if (isWatched) {
+        // Remove from watchlist
+        const { error } = await supabase
+          .from('watchlist')
+          .delete()
+          .eq('user_id', DEFAULT_USER_ID)
+          .eq('coin_id', coinId);
+
+        if (error) throw error;
+
+        setWatchlistIds(prev => {
+          const next = new Set(prev);
+          next.delete(coinId);
+          return next;
+        });
+        toast.success(`${coinSymbol.toUpperCase()} removed from watchlist`);
+      } else {
+        // Add to watchlist
+        const { error } = await supabase
+          .from('watchlist')
+          .insert({
+            user_id: DEFAULT_USER_ID,
+            coin_id: coinId,
+            coin_symbol: coinSymbol.toUpperCase(),
+          });
+
+        if (error) {
+          if (error.code === '23505') {
+            // Already exists, just sync state
+            setWatchlistIds(prev => new Set(prev).add(coinId));
+          } else {
+            throw error;
+          }
+        } else {
+          setWatchlistIds(prev => new Set(prev).add(coinId));
+          toast.success(`${coinSymbol.toUpperCase()} added to watchlist`);
+        }
+      }
+    } catch (error) {
+      console.error('Watchlist Error:', error);
+      toast.error('Failed to update watchlist');
+    } finally {
+      setWatchlistLoading(null);
+    }
   };
 
   const pricesList = Object.values(prices);
 
+  // Pre-compute sorted arrays and top/bottom sets for filters (memoized)
+  const filterSets = useMemo(() => {
+    const validCoins = pricesList.filter(coin => 
+      coin && typeof coin.current_price === 'number' && coin.current_price >= 0.01
+    );
+
+    const sortedByPrice = [...validCoins].sort((a, b) => (b.current_price || 0) - (a.current_price || 0));
+    const sortedByPriceLow = [...validCoins].sort((a, b) => (a.current_price || 0) - (b.current_price || 0));
+    const sortedByMcap = [...validCoins].sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
+    const sortedByMcapLow = [...validCoins].sort((a, b) => (a.market_cap || 0) - (b.market_cap || 0));
+
+    const top20Percent = Math.max(1, Math.floor(sortedByPrice.length * 0.2));
+    const bottom20Percent = Math.max(1, Math.floor(sortedByPriceLow.length * 0.2));
+    const top20Mcap = Math.max(1, Math.floor(sortedByMcap.length * 0.2));
+    const bottom20Mcap = Math.max(1, Math.floor(sortedByMcapLow.length * 0.2));
+
+    return {
+      highPriceSet: new Set(sortedByPrice.slice(0, top20Percent).map(c => c.id)),
+      lowPriceSet: new Set(sortedByPriceLow.slice(0, bottom20Percent).map(c => c.id)),
+      highMcapSet: new Set(sortedByMcap.slice(0, top20Mcap).map(c => c.id)),
+      lowMcapSet: new Set(sortedByMcapLow.slice(0, bottom20Mcap).map(c => c.id)),
+    };
+  }, [pricesList]);
+
   // Filter and sort coins
   const filteredAndSortedCoins = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    
     let filtered = pricesList.filter((coin) => {
       // Strictly filter out coins with 0 or invalid price, or those that would display as $0.00 (< 0.01)
       if (!coin || typeof coin.current_price !== 'number' || coin.current_price < 0.01) return false;
-      const query = searchQuery.toLowerCase();
-      const matchesSearch = (
-        coin.name.toLowerCase().includes(query) ||
-        coin.symbol.toLowerCase().includes(query) ||
-        coin.id.toLowerCase().includes(query)
-      );
+      
+      // Apply search filter first
+      if (query) {
+        const matchesSearch = (
+          coin.name?.toLowerCase().includes(query) ||
+          coin.symbol?.toLowerCase().includes(query) ||
+          coin.id?.toLowerCase().includes(query)
+        );
+        if (!matchesSearch) return false;
+      }
 
-      if (!matchesSearch) return false;
-
-      // Apply high/low filters
+      // Apply high/low filters using pre-computed sets
       switch (filterType) {
         case 'top_gainers':
           return (coin.price_change_percentage_24h || 0) > 0;
         case 'top_losers':
           return (coin.price_change_percentage_24h || 0) < 0;
         case 'high_price':
-          // Top 20% by price
-          const sortedByPrice = [...pricesList].sort((a, b) => (b.current_price || 0) - (a.current_price || 0));
-          const top20Percent = Math.max(1, Math.floor(sortedByPrice.length * 0.2));
-          return sortedByPrice.slice(0, top20Percent).some(c => c.id === coin.id);
+          return filterSets.highPriceSet.has(coin.id);
         case 'low_price':
-          // Bottom 20% by price
-          const sortedByPriceLow = [...pricesList].sort((a, b) => (a.current_price || 0) - (b.current_price || 0));
-          const bottom20Percent = Math.max(1, Math.floor(sortedByPriceLow.length * 0.2));
-          return sortedByPriceLow.slice(0, bottom20Percent).some(c => c.id === coin.id);
+          return filterSets.lowPriceSet.has(coin.id);
         case 'high_mcap':
-          // Top 20% by market cap
-          const sortedByMcap = [...pricesList].sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
-          const top20Mcap = Math.max(1, Math.floor(sortedByMcap.length * 0.2));
-          return sortedByMcap.slice(0, top20Mcap).some(c => c.id === coin.id);
+          return filterSets.highMcapSet.has(coin.id);
         case 'low_mcap':
-          // Bottom 20% by market cap
-          const sortedByMcapLow = [...pricesList].sort((a, b) => (a.market_cap || 0) - (b.market_cap || 0));
-          const bottom20Mcap = Math.max(1, Math.floor(sortedByMcapLow.length * 0.2));
-          return sortedByMcapLow.slice(0, bottom20Mcap).some(c => c.id === coin.id);
+          return filterSets.lowMcapSet.has(coin.id);
         case 'all':
         default:
           return true;
@@ -118,7 +206,7 @@ export default function DashboardPage() {
     });
 
     return filtered;
-  }, [pricesList, searchQuery, sortField, sortDirection, filterType]);
+  }, [pricesList, searchQuery, sortField, sortDirection, filterType, filterSets]);
 
   // Pagination
   const totalPages = Math.ceil(filteredAndSortedCoins.length / itemsPerPage);
@@ -131,26 +219,67 @@ export default function DashboardPage() {
     setCurrentPage(1);
   }, [searchQuery, sortField, sortDirection, filterType]);
 
-  const handleSort = (field: SortField) => {
+  const handleSort = useCallback((field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
       setSortDirection('desc');
     }
-  };
+  }, [sortField, sortDirection]);
 
-  const SortButton = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
-    <button
-      onClick={() => handleSort(field)}
-      className="flex items-center gap-1 hover:text-white transition-colors"
-    >
-      <span>{children}</span>
-      {sortField === field && (
-        <ArrowUpDown className={`w-3 h-3 ${sortDirection === 'asc' ? 'rotate-180' : ''}`} />
-      )}
-    </button>
-  );
+  const SortButton = memo(({ field, children }: { field: SortField; children: React.ReactNode }) => {
+    const isActive = sortField === field;
+    return (
+      <button
+        onClick={() => handleSort(field)}
+        className="flex items-center gap-1 hover:text-white transition-colors whitespace-nowrap"
+      >
+        <span>{children}</span>
+        {isActive ? (
+          <ArrowUpDown className={`w-3 h-3 ${sortDirection === 'asc' ? 'rotate-180' : ''}`} />
+        ) : (
+          <ArrowUpDown className="w-3 h-3 opacity-30" />
+        )}
+      </button>
+    );
+  });
+  SortButton.displayName = 'SortButton';
+
+  // Memoized coin row component to prevent unnecessary re-renders
+  const CoinRow = memo(({ 
+    coin, 
+    isWatched, 
+    isLoading, 
+    onRowClick, 
+    onWatchlistToggle 
+  }: { 
+    coin: CryptoPrice; 
+    isWatched: boolean; 
+    isLoading: boolean;
+    onRowClick: () => void;
+    onWatchlistToggle: () => void;
+  }) => (
+    <tr onClick={onRowClick} className="cursor-pointer hover:bg-gray-700">
+      <td className="px-4 py-4 text-left whitespace-nowrap">{coin.name} ({coin.symbol})</td>
+      <td className="px-4 py-4 text-right whitespace-nowrap">${coin.current_price?.toFixed(2)}</td>
+      <td className={`px-4 py-4 text-right whitespace-nowrap ${coin.price_change_percentage_24h >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+        {coin.price_change_percentage_24h >= 0 ? '+' : ''}{coin.price_change_percentage_24h?.toFixed(2)}%
+      </td>
+      <td className="px-4 py-4 text-right whitespace-nowrap hidden md:table-cell">${coin.market_cap?.toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
+      <td className="px-4 py-4 text-right whitespace-nowrap hidden lg:table-cell">${coin.volume_24h?.toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
+      <td className="px-4 py-4 text-center">
+        <button
+          onClick={(e) => { e.stopPropagation(); onWatchlistToggle(); }}
+          className="p-2 hover:bg-gray-600 rounded-full transition-colors"
+          disabled={isLoading}
+        >
+          <Star className={`w-5 h-5 transition-colors ${isWatched ? 'text-yellow-400 fill-yellow-400' : 'text-gray-400 hover:text-yellow-400'}`} />
+        </button>
+      </td>
+    </tr>
+  ));
+  CoinRow.displayName = 'CoinRow';
 
   return (
     <div>
@@ -210,41 +339,47 @@ export default function DashboardPage() {
               <thead className="bg-gray-700">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                    <SortButton field="name">Coin</SortButton>
+                    <div className="flex items-center">
+                      <SortButton field="name">Coin</SortButton>
+                    </div>
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">
-                    <SortButton field="price">Price</SortButton>
+                    <div className="flex items-center justify-end">
+                      <SortButton field="price">Price</SortButton>
+                    </div>
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">
-                    <SortButton field="change">24h Change</SortButton>
+                    <div className="flex items-center justify-end">
+                      <SortButton field="change">24h Change</SortButton>
+                    </div>
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider hidden md:table-cell">
-                    <SortButton field="market_cap">Market Cap</SortButton>
+                    <div className="flex items-center justify-end">
+                      <SortButton field="market_cap">Market Cap</SortButton>
+                    </div>
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider hidden lg:table-cell">
-                    <SortButton field="volume">Volume</SortButton>
+                    <div className="flex items-center justify-end">
+                      <SortButton field="volume">Volume</SortButton>
+                    </div>
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">
-                    Watchlist
+                    <div className="flex items-center justify-center">
+                      Watchlist
+                    </div>
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-gray-800 divide-y divide-gray-700">
                 {paginatedCoins.map(coin => (
-                  <tr key={coin.id} onClick={() => router.push(`/dashboard/coins/${coin.id}`)} className="cursor-pointer hover:bg-gray-700">
-                    <td className="px-4 py-4">{coin.name} ({coin.symbol})</td>
-                    <td className="px-4 py-4 text-right">${coin.current_price?.toFixed(2)}</td>
-                    <td className={`px-4 py-4 text-right ${coin.price_change_percentage_24h >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      {coin.price_change_percentage_24h?.toFixed(2)}%
-                    </td>
-                    <td className="px-4 py-4 text-right hidden md:table-cell">${coin.market_cap?.toLocaleString()}</td>
-                    <td className="px-4 py-4 text-right hidden lg:table-cell">${coin.volume_24h?.toLocaleString()}</td>
-                    <td className="px-4 py-4 text-center">
-                      <button onClick={(e) => { e.stopPropagation(); toggleWatchlist(coin.id, coin.symbol); }}>
-                        <Star className="w-5 h-5 text-gray-400 hover:text-yellow-400" />
-                      </button>
-                    </td>
-                  </tr>
+                  <CoinRow
+                    key={coin.id}
+                    coin={coin}
+                    isWatched={watchlistIds.has(coin.id)}
+                    isLoading={watchlistLoading === coin.id}
+                    onRowClick={() => router.push(`/dashboard/coins/${coin.id}`)}
+                    onWatchlistToggle={() => toggleWatchlist(coin.id, coin.symbol)}
+                  />
                 ))}
               </tbody>
             </table>
