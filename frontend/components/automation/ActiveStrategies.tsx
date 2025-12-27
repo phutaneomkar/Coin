@@ -49,6 +49,7 @@ export default function ActiveStrategies() {
             });
             if (!res.ok) throw new Error("Failed to stop strategy");
             fetchStrategies(); // Refresh immediately
+            window.location.reload(); // Force full refresh to ensure UI sync
         } catch (error) {
             alert("Error stopping strategy");
         }

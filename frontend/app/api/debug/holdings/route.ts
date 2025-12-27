@@ -1,92 +1,51 @@
-import { NextRequest, NextResponse } from 'next/server';
+
+import { NextResponse } from 'next/server';
 import { createClient } from '../../../../lib/supabase/server';
+import { DEFAULT_USER_ID } from '../../../../lib/auth-utils';
 
-/**
- * Debug endpoint to check holdings and orders
- * GET /api/debug/holdings?coinId=btc
- */
-export async function GET(request: NextRequest) {
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+export const dynamic = 'force-dynamic';
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+export async function GET() {
+  const supabase = await createClient();
+  const userId = DEFAULT_USER_ID;
 
-    const searchParams = request.nextUrl.searchParams;
-    const coinId = searchParams.get('coinId');
+  const { data: holdings, error } = await supabase
+    .from('holdings')
+    .select('*')
+    .eq('user_id', userId);
 
-    // Get all holdings
-    const { data: allHoldings, error: holdingsError } = await supabase
-      .from('holdings')
-      .select('*')
-      .eq('user_id', user.id);
-
-    // Get all completed buy orders
-    const { data: allOrders, error: ordersError } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('order_status', 'completed')
-      .eq('order_type', 'buy');
-
-    // If coinId provided, filter
-    let filteredHoldings = allHoldings;
-    let filteredOrders = allOrders;
-
-    if (coinId) {
-      const normalizedCoinId = coinId.toLowerCase().trim();
-      filteredHoldings = allHoldings?.filter(
-        h => h.coin_id?.toLowerCase() === normalizedCoinId
-      ) || [];
-      filteredOrders = allOrders?.filter(
-        o => (o.coin_id || '').toLowerCase() === normalizedCoinId
-      ) || [];
-    }
-
-    // Check for zero-quantity holdings that should be deleted
-    const zeroQuantityHoldings = allHoldings?.filter(h => parseFloat(h.quantity.toString()) <= 0) || [];
-
-    return NextResponse.json({
-      success: true,
-      user_id: user.id,
-      search_coinId: coinId,
-      all_holdings: allHoldings || [],
-      all_orders: allOrders || [],
-      filtered_holdings: filteredHoldings,
-      filtered_orders: filteredOrders,
-      holdings_count: allHoldings?.length || 0,
-      orders_count: allOrders?.length || 0,
-      zero_quantity_holdings: zeroQuantityHoldings,
-      zero_quantity_count: zeroQuantityHoldings.length,
-      errors: {
-        holdings: holdingsError?.message,
-        orders: ordersError?.message,
-      },
-      note: zeroQuantityHoldings.length > 0
-        ? `WARNING: Found ${zeroQuantityHoldings.length} holdings with 0 or negative quantity. These should be deleted.`
-        : 'All holdings have quantity > 0',
-    });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Analyze duplicates
+  const map = new Map();
+  const duplicates: any[] = [];
+  const report: any[] = [];
+
+  holdings.forEach(h => {
+    const key = (h.coin_id || '').toLowerCase().trim();
+    if (map.has(key)) {
+      duplicates.push({
+        coin: key,
+        ids: [map.get(key).id, h.id],
+        quantities: [map.get(key).quantity, h.quantity]
+      });
+    } else {
+      map.set(key, h);
+    }
+    report.push({
+      id: h.id,
+      coin_id: h.coin_id,
+      key: key,
+      quantity: h.quantity,
+      avg_price: h.average_buy_price
+    });
+  });
+
+  return NextResponse.json({
+    count: holdings.length,
+    duplicates,
+    holdings: report
+  });
 }
-
-
-
-
-
-
-
-
-
-

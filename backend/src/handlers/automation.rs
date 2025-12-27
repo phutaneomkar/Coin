@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use sqlx::Row;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -57,6 +58,28 @@ pub async fn start_strategy(
 
     let strategy_id = Uuid::new_v4();
 
+    // 🛡️ SECURITY: Validated User Balance
+    // 🛡️ SECURITY: Validated User Balance
+    let balance_query = sqlx::query(
+        "SELECT balance_inr FROM profiles WHERE id = $1"
+    )
+    .bind(user_uuid)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("DB Error: {}", e)))?;
+
+    let user_balance: Decimal = match balance_query {
+        Some(record) => record.try_get("balance_inr").unwrap_or(Decimal::ZERO),
+        None => return Err((StatusCode::BAD_REQUEST, "User profile not found".to_string())),
+    };
+
+    if user_balance < payload.amount {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("Insufficient Balance. Available: ${}, Required: ${}", user_balance, payload.amount),
+        ));
+    }
+
     // Insert Strategy
     sqlx::query(
         "INSERT INTO strategies (id, user_id, amount, profit_percentage, total_iterations, duration_minutes, status) VALUES ($1, $2, $3, $4, $5, $6, 'running')"
@@ -95,6 +118,8 @@ pub async fn stop_strategy(
     if result.rows_affected() == 0 {
         return Err((StatusCode::NOT_FOUND, "Strategy not found".to_string()));
     }
+    
+    println!("DEBUG: Successfully stopped strategy {}. Rows affected: {}", id, result.rows_affected());
 
     Ok(Json(StrategyResponse {
         id: id,

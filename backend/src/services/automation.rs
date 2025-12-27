@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tracing::{error, info, warn};
+use crate::services::execution::execute_order;
 use uuid::Uuid;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -159,7 +160,10 @@ impl AutomationEngine {
 
             let strategy = match current_strategy {
                 Some(s) => s,
-                None => continue, // Strategy was stopped
+                None => {
+                    info!("🛑 Skipping cycle for Strategy {} (Not Running)", strategy.id);
+                    continue;
+                }
             };
 
             if let Some(order_id) = strategy.current_order_id {
@@ -432,6 +436,20 @@ impl AutomationEngine {
             info!("🎯 Strategy {}: Best opportunity found! {} predicted to increase {}% (Current: {}, Predicted: {})", 
                 strategy.id, best.coin_id, best.price_change_percent, best.current_price, best.predicted_price_10s);
 
+            // ⚡ RACE CONDITION FIX: Re-check if strategy is still running before executing BUY
+            let is_running = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM strategies WHERE id = $1 AND status = 'running')"
+            )
+            .bind(strategy.id)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or(false);
+
+            if !is_running {
+                warn!("🛑 Strategy {} was stopped during analysis. Aborting BUY order.", strategy.id);
+                return Ok(());
+            }
+
             // Place MARKET BUY order immediately
             let quantity = strategy.amount / best.current_price;
             let buy_order_id = Uuid::new_v4();
@@ -465,7 +483,11 @@ impl AutomationEngine {
             )
             .await?;
 
-            // Update user balance and holdings (simulate immediate execution) (omitted for brevity)
+            // Update user balance and holdings (simulate immediate execution)
+            if let Err(e) = execute_order(&self.pool, buy_order_id, best.current_price).await {
+                error!("❌ Failed to execute automation buy order {}: {}", buy_order_id, e);
+                // Continue anyway, but log potential consistency issue
+            }
 
             // Immediately place limit sell order
             let multiplier = Decimal::ONE + (strategy.profit_percentage / Decimal::from(100));

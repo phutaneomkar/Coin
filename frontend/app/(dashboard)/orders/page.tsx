@@ -421,8 +421,8 @@ function OrdersContent() {
       if (hasSyncedRef.current || isSyncingRef.current) return;
 
       try {
-        // Only sync if we have orders but no holdings, and we're not loading
-        if (!isLoading && orders.length > 0 && Object.keys(holdingsData).length === 0) {
+        // Only sync if we have orders, and we're not loading
+        if (!isLoading && orders.length > 0) {
           isSyncingRef.current = true; // Lock sync
           hasSyncedRef.current = true; // Mark as synced before making the call
 
@@ -432,7 +432,8 @@ function OrdersContent() {
           if (data.success && data.synced > 0) {
             await fetchHoldings(); // Refresh holdings after sync
           } else {
-            hasSyncedRef.current = false; // Reset if sync failed or no holdings to sync
+            // If sync returns 0 updates, we still consider it "done" for this session to avoid loop
+            hasSyncedRef.current = true;
           }
 
           isSyncingRef.current = false; // Unlock sync

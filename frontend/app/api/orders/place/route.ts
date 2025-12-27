@@ -104,6 +104,10 @@ export async function POST(request: NextRequest) {
       if (orderData.side === 'sell') {
         const normalizedCoinId = (orderData.coin_id || '').toLowerCase().trim();
 
+        // Check if user already has a pending sell order for this coin
+        // User requested ability to place multiple sell orders if they have remaining quantity
+        // The validation below (availableQty < quantity) already handles this.
+
         // First try with normalized coin_id
         let { data: holding, error: holdingError } = await supabase
           .from('holdings')

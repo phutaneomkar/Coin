@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '../../../../lib/supabase/server';
-import { createAdminClient } from '../../../../lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 // Global sync lock to prevent concurrent syncs
 let isSyncing = false;
@@ -24,17 +24,24 @@ export async function POST(request: NextRequest) {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) {
-        isSyncing = false;
-        syncPromise = null;
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      let userId = user?.id;
+
+      if (!userId) {
+        const hasAccess = request.cookies.has('app_access');
+        if (hasAccess) {
+          userId = '00000000-0000-0000-0000-000000000000'; // DEFAULT_USER_ID
+        } else {
+          isSyncing = false;
+          syncPromise = null;
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
       }
 
       // Get all completed buy orders
       const { data: completedBuyOrders, error: ordersError } = await supabase
         .from('orders')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('order_status', 'completed')
         .eq('order_type', 'buy')
         .order('order_date', { ascending: true });
@@ -61,7 +68,7 @@ export async function POST(request: NextRequest) {
       const { data: existingHoldings, error: holdingsError } = await supabase
         .from('holdings')
         .select('*')
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
 
       if (holdingsError) {
         console.error('Error fetching holdings:', holdingsError);
@@ -158,7 +165,7 @@ export async function POST(request: NextRequest) {
             let { error: insertError } = await supabase
               .from('holdings')
               .insert({
-                user_id: user.id,
+                user_id: userId,
                 coin_id: normalizedCoinId,
                 coin_symbol: coinSymbol || normalizedCoinId.toUpperCase(),
                 quantity: totalQuantity,
@@ -173,7 +180,7 @@ export async function POST(request: NextRequest) {
                 const { error: adminError } = await adminClient
                   .from('holdings')
                   .insert({
-                    user_id: user.id,
+                    user_id: userId,
                     coin_id: normalizedCoinId,
                     coin_symbol: coinSymbol || normalizedCoinId.toUpperCase(),
                     quantity: totalQuantity,

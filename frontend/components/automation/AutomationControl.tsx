@@ -16,17 +16,43 @@ export default function AutomationControl() {
     });
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+    const [balance, setBalance] = useState<number | null>(null);
+
     useEffect(() => {
-        const fetchUser = async () => {
+        const init = async () => {
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
+
+            let uid = null;
             if (user) {
-                setUserId(user.id);
+                uid = user.id;
+            } else {
+                const hasCookie = document.cookie.split(';').some(c => c.trim().startsWith('app_access='));
+                if (hasCookie) {
+                    uid = '00000000-0000-0000-0000-000000000000';
+                }
+            }
+
+            if (uid) {
+                setUserId(uid);
+                // Fetch Balance from API (Server-side bypasses RLS/Auth issues)
+                try {
+                    const res = await fetch('/api/user/balance');
+                    if (res.ok) {
+                        const data = await res.json();
+                        setBalance(Number(data.balance));
+                    } else {
+                        const errText = await res.text();
+                        console.error("Failed to fetch balance API:", res.status, errText);
+                    }
+                } catch (e) {
+                    console.error("Balance API Network Error", e);
+                }
             } else {
                 setMessage({ type: "error", text: "User not authenticated" });
             }
         };
-        fetchUser();
+        init();
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -34,9 +60,17 @@ export default function AutomationControl() {
         setLoading(true);
         setMessage(null);
 
+        const amount = parseFloat(formData.amount);
+
         // Basic Validation
-        if (parseFloat(formData.amount) <= 0) {
+        if (amount <= 0) {
             setMessage({ type: "error", text: "Amount must be greater than 0" });
+            setLoading(false);
+            return;
+        }
+
+        if (balance !== null && amount > balance) {
+            setMessage({ type: "error", text: `Insufficient Balance. Available: $${balance.toFixed(2)}` });
             setLoading(false);
             return;
         }
@@ -70,9 +104,7 @@ export default function AutomationControl() {
             }
 
             setMessage({ type: "success", text: "Automation Strategy Started Successfully!" });
-            // Reset form or redirect? Maybe just refresh the list below
             router.refresh();
-            // Force reload to update ActiveStrategies list if it doesn't auto-refresh
             window.location.reload();
         } catch (err: any) {
             setMessage({ type: "error", text: err.message });
@@ -87,7 +119,14 @@ export default function AutomationControl() {
 
     return (
         <div className="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
-            <h2 className="text-xl font-bold mb-4 text-white">🚀 New Automation Strategy</h2>
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white">🚀 New Automation Strategy</h2>
+                {balance !== null && (
+                    <span className="text-sm text-gray-400">
+                        Balance: <span className="text-green-400 font-bold">${balance.toFixed(2)}</span>
+                    </span>
+                )}
+            </div>
 
             {message && (
                 <div className={`p-3 mb-4 rounded ${message.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>

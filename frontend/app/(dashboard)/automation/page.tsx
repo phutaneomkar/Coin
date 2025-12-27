@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { Play, Pause, Square, Clock, DollarSign, Percent, Save, Hash } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -30,7 +32,9 @@ export default function AutomationPage() {
         const data = await res.json();
         setHistory(data);
       } else {
-        console.error('Failed to fetch strategies history');
+        const errText = await res.text();
+        console.error('Failed to fetch strategies history:', res.status, errText);
+        toast.error(`Failed to load history: ${res.status}`);
       }
     } catch (error) {
       console.error('Error fetching history:', error);
@@ -73,17 +77,21 @@ export default function AutomationPage() {
   };
 
   const handleStop = async (id: string) => {
-    // TODO: Implement stop API or direct DB update if using RLS
-    const { error } = await supabase
-      .from('strategies')
-      .update({ status: 'stopped' })
-      .eq('id', id);
+    try {
+      const res = await fetch(`/api/automation/${id}/stop`, {
+        method: 'POST',
+      });
 
-    if (!error) {
-      toast.success('Strategy Stopped');
-      fetchHistory();
-    } else {
-      toast.error('Failed to stop');
+      if (res.ok) {
+        toast.success('Strategy Stopped');
+        fetchHistory();
+      } else {
+        const data = await res.json();
+        toast.error(data.message || 'Failed to stop strategy');
+      }
+    } catch (error) {
+      console.error('Stop error:', error);
+      toast.error('Error stopping strategy');
     }
   };
 
@@ -254,7 +262,7 @@ export default function AutomationPage() {
                   history.map((strategy) => (
                     <tr key={strategy.id} className="hover:bg-gray-700/30 transition-colors">
                       <td className="px-6 py-4 text-gray-300">
-                        {new Date(strategy.start_time).toLocaleString()}
+                        {new Date(strategy.created_at).toLocaleString()}
                       </td>
                       <td className="px-6 py-4 text-gray-300">
                         Invest: ${strategy.amount} | Target: {strategy.profit_percentage}%

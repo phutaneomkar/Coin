@@ -23,6 +23,7 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [userBalance, setUserBalance] = useState<number | null>(null);
   const [userHoldings, setUserHoldings] = useState<number | null>(null);
+  const [hasPendingSellOrder, setHasPendingSellOrder] = useState(false);
   const supabase = createClient();
   const { prices } = usePriceStore();
   const currentPrice = prices[coinId]?.current_price || 0;
@@ -98,6 +99,14 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
         // Update state with AVAILABLE amounts
         setUserBalance(Math.max(0, rawBalance - lockedBalance));
         setUserHoldings(Math.max(0, rawHoldings - lockedHoldings));
+
+        // Check for existing pending sell order for this coin (case-insensitive)
+        const hasPendingSell = pendingOrders?.some(
+          o => o.order_status === 'pending' &&
+            o.order_type === 'sell' &&
+            (o.coin_id === coinId || o.coin_id?.toLowerCase() === coinId.toLowerCase())
+        );
+        setHasPendingSellOrder(!!hasPendingSell);
 
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -495,6 +504,7 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
         {/* Submit Button */}
         <button
           type="submit"
+
           disabled={isLoading || quantityVal <= 0 || (orderMode === 'limit' && (!price || parseFloat(price) <= 0))}
           className={`w-full py-4 px-4 rounded-lg font-bold text-lg text-white shadow-lg transition-all ${orderType === 'buy'
             ? 'bg-green-600 hover:bg-green-700 shadow-green-600/30'
