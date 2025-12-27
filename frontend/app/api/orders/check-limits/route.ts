@@ -199,6 +199,7 @@ export async function GET(request: NextRequest) {
         success: true,
         message: 'No pending limit orders',
         executed: 0,
+        logs: ['No pending limit orders found']
       });
     }
 
@@ -210,6 +211,7 @@ export async function GET(request: NextRequest) {
     for (const order of pendingOrders) {
       try {
         const coinId = (order.coin_id || '').trim();
+        logs.push(`Order #${order.id} | ${order.order_type} ${coinId} @ ${order.price_per_unit}`);
 
         // Get current market price
         const binanceSymbol = getBinanceSymbol(coinId);
@@ -238,17 +240,17 @@ export async function GET(request: NextRequest) {
         // Ensure we're comparing numbers
         if (order.order_type === 'buy') {
           shouldExecute = currentPrice <= limitPrice;
-          reason = `BUY ${coinId}: Current($${currentPrice}) <= Limit($${limitPrice}) is ${shouldExecute}`;
+          reason = `BUY Check: Cur($${currentPrice}) <= Limit($${limitPrice}) is ${shouldExecute}`;
         } else if (order.order_type === 'sell') {
           shouldExecute = currentPrice >= limitPrice;
-          reason = `SELL ${coinId}: Current($${currentPrice}) >= Limit($${limitPrice}) is ${shouldExecute}`;
+          reason = `SELL Check: Cur($${currentPrice}) >= Limit($${limitPrice}) is ${shouldExecute}`;
         }
 
-        logs.push(`Order ${order.id}: ${reason}`);
+        logs.push(reason);
 
         if (shouldExecute) {
           console.log(`Executing ${order.order_type} limit order ${order.id} at price ${currentPrice}`);
-          logs.push(`>> Triggering execution for #${order.id}`);
+          logs.push(`>> EXECUTING #${order.id}...`);
 
           // Update order with execution price (use current market price, not limit price)
           const executionPrice = currentPrice;
@@ -278,13 +280,13 @@ export async function GET(request: NextRequest) {
             logs.push(`Failed to update status for ${order.id}: ${updateError.message}`);
           } else {
             executedCount++;
-            logs.push(`Successfully executed order ${order.id}`);
+            logs.push(`SUCCESS: Order ${order.id} executed!`);
           }
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         errors.push(`Order ${order.id}: ${errorMessage}`);
-        logs.push(`Error executing ${order.id}: ${errorMessage}`);
+        logs.push(`ERROR executing ${order.id}: ${errorMessage}`);
         console.error(`Error processing order ${order.id}:`, error);
       }
     }

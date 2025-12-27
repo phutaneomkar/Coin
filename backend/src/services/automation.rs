@@ -44,6 +44,22 @@ struct BinanceOrderBookResponse {
     asks: Vec<[String; 2]>, // [price, quantity]
 }
 
+#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+struct BinanceTrade {
+    #[allow(dead_code)]
+    id: i64,
+    price: String,
+    qty: String,
+    #[allow(dead_code)]
+    quoteQty: String,
+    #[allow(dead_code)]
+    time: i64,
+    isBuyerMaker: bool,
+    #[allow(dead_code)]
+    isBestMatch: bool,
+}
+
 #[derive(Debug, Clone)]
 struct CoinAnalysis {
     coin_id: String,
@@ -83,13 +99,56 @@ impl AutomationEngine {
             error!("⚠️ Failed to run runtime migration for strategies: {}", e);
         }
 
+        // Ensure profit_percentage is DECIMAL (not Integer)
+        if let Err(e) =
+            sqlx::query("ALTER TABLE strategies ALTER COLUMN profit_percentage TYPE NUMERIC")
+                .execute(&self.pool)
+                .await
+        {
+             // Ignore error if it's just a type conversion issue to same type, but log it
+             warn!("⚠️ Failed to enforce profit_percentage type: {}", e);
+        }
+
+        // 🛡️ CRITICAL FIX: Ensure orders table has high precision for low-value coins
+        // (Prevents 0.07224 truncating to 0.07)
+        if let Err(e) = sqlx::query("
+            ALTER TABLE orders 
+            ALTER COLUMN price_per_unit TYPE NUMERIC,
+            ALTER COLUMN quantity TYPE NUMERIC,
+            ALTER COLUMN total_amount TYPE NUMERIC
+        ").execute(&self.pool).await {
+            warn!("⚠️ Failed to enforce high precision on orders table: {}", e);
+        }
+
+
         let self_clone = self.clone();
+
         tokio::spawn(async move {
+            let mut error_count = 0;
             loop {
-                if let Err(e) = self_clone.process_strategies().await {
-                    error!("❌ Automation Loop Error: {}", e);
+                match self_clone.process_strategies().await {
+                    Ok(_) => {
+                        if error_count > 0 {
+                            info!("✅ Automation Loop recovered.");
+                            error_count = 0;
+                        }
+                        sleep(Duration::from_secs(2)).await; 
+                    },
+                    Err(e) => {
+                        error!("❌ Automation Loop Error: {}", e);
+                        error_count += 1;
+                        // Simple linear backoff: 2s -> 5s -> 10s -> max 30s
+                        let delay = if error_count > 5 {
+                            30
+                        } else if error_count > 2 {
+                            10
+                        } else {
+                            5
+                        };
+                        warn!("⚠️ Network/DB stability issue. Retrying in {} seconds...", delay);
+                        sleep(Duration::from_secs(delay)).await;
+                    }
                 }
-                sleep(Duration::from_secs(2)).await; // Check every 2 seconds for faster response
             }
         });
     }
@@ -104,6 +163,9 @@ impl AutomationEngine {
         if strategies.is_empty() {
             return Ok(());
         }
+
+
+
 
         // 2. Check limits FIRST before processing
         for strategy in &strategies {
@@ -210,6 +272,9 @@ impl AutomationEngine {
                     let multiplier =
                         Decimal::ONE + (strategy.profit_percentage / Decimal::from(100));
                     let target_price = buy_price * multiplier;
+
+                    info!("CALC_DEBUG: Strategy {} BuyPrice: {}, Profit%: {}, Multiplier: {}, TargetPrice: {}", 
+                        strategy.id, buy_price, strategy.profit_percentage, multiplier, target_price);
 
                     // Place Limit Sell Order IMMEDIATELY
                     let quantity = order.quantity;
@@ -342,6 +407,10 @@ impl AutomationEngine {
 
         let multiplier = Decimal::ONE + (strategy.profit_percentage / Decimal::from(100));
         let target_price = entry_price * multiplier;
+
+        info!("CALC_DEBUG (Active): Strategy {} Entry: {}, Profit%: {}, Target: {}, Current: {}", 
+            strategy.id, entry_price, strategy.profit_percentage, target_price, current_price);
+
 
         if current_price >= target_price {
             info!(
@@ -551,8 +620,17 @@ impl AutomationEngine {
     ) -> anyhow::Result<CoinAnalysis> {
         // Fetch order book data
         let order_book = self.fetch_order_book(coin_id).await?;
+        
+        // Fetch recent trades (Allow failure, just warn)
+        let trades = match self.fetch_recent_trades(coin_id).await {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("⚠️ Failed to fetch trades for {}: {}", coin_id, e);
+                Vec::new() // Fallback to empty
+            }
+        };
 
-        // Calculate buy and sell pressure
+        // Calculate buy and sell pressure from ORDER BOOK
         let buy_pressure: Decimal = order_book
             .bids
             .iter()
@@ -575,10 +653,35 @@ impl AutomationEngine {
             })
             .sum();
 
+        // Calculate pressure from TRADE HISTORY
+        let mut trade_buy_vol = Decimal::ZERO;
+        let mut trade_sell_vol = Decimal::ZERO;
+
+        for trade in &trades {
+            let qty: Decimal = trade.qty.parse().unwrap_or(Decimal::ZERO);
+            let price: Decimal = trade.price.parse().unwrap_or(Decimal::ZERO);
+            let vol = price * qty;
+            
+            // isBuyerMaker = true -> Maker is BUYER -> Taker is SELLER -> SOLD side
+            // isBuyerMaker = false -> Maker is SELLER -> Taker is BUYER -> BOUGHT side
+            if trade.isBuyerMaker {
+                trade_sell_vol += vol;
+            } else {
+                trade_buy_vol += vol;
+            }
+        }
+
         // Advanced calculation: Predict 10-second price
         let total_pressure = buy_pressure + sell_pressure;
-        let momentum = if total_pressure > Decimal::ZERO {
+        let ob_momentum = if total_pressure > Decimal::ZERO {
             (buy_pressure - sell_pressure) / total_pressure
+        } else {
+            Decimal::ZERO
+        };
+
+        let total_trade_vol = trade_buy_vol + trade_sell_vol;
+        let trade_momentum = if total_trade_vol > Decimal::ZERO {
+            (trade_buy_vol - trade_sell_vol) / total_trade_vol
         } else {
             Decimal::ZERO
         };
@@ -590,15 +693,15 @@ impl AutomationEngine {
              Decimal::ZERO
         };
 
-        // Prediction Formula:
-        // Base: Current Price
-        // Momentum Impact: max +/- 5% (0.05 coefficient) based on order book
-        // Trend Impact: max +/- 10% (0.10 coefficient) based on 24h trend
-        // This allows significantly higher volatility predictions
-        let momentum_factor = Decimal::from_parts(5, 0, 0, false, 2); // 0.05
+        // Prediction Formula Weights:
+        // OrderBook Momentum: 0.05 (Imbalance in pending orders)
+        // Trend (24h): 0.10 (General direction)
+        // Trade Flow: 0.20 (Real executed momentum - HIGH IMPORTANCE)
+        let ob_factor = Decimal::from_parts(5, 0, 0, false, 2); // 0.05
         let trend_factor = Decimal::from_parts(1, 0, 0, false, 1); // 0.10
+        let trade_factor = Decimal::from_parts(2, 0, 0, false, 1); // 0.20
 
-        let combined_bias = (momentum * momentum_factor) + (trend_24h * trend_factor);
+        let combined_bias = (ob_momentum * ob_factor) + (trend_24h * trend_factor) + (trade_momentum * trade_factor);
         
         let predicted_price_10s = current_price * (Decimal::ONE + combined_bias);
 
@@ -609,9 +712,10 @@ impl AutomationEngine {
             Decimal::ZERO
         };
         
-        // Log deep analysis for top opportunities to debug "incorrect" claims
+        // Log deep analysis for top opportunities
         if price_change_percent > Decimal::from(1) {
-            info!("🔬 Analysis {}: Momentum: {}, Trend24h: {}, Pred% : {}", coin_id, momentum, trend_24h, price_change_percent);
+            info!("🔬 Analysis {}: OB_Mom: {}, Trade_Mom: {}, Trend24h: {}, Pred% : {}", 
+                coin_id, ob_momentum, trade_momentum, trend_24h, price_change_percent);
         }
 
         Ok(CoinAnalysis {
@@ -642,6 +746,26 @@ impl AutomationEngine {
 
         let order_book: BinanceOrderBookResponse = response.json().await?;
         Ok(order_book)
+    }
+
+    async fn fetch_recent_trades(&self, coin_id: &str) -> anyhow::Result<Vec<BinanceTrade>> {
+        let symbol = format!("{}USDT", coin_id.to_uppercase());
+        let url = format!(
+            "https://api.binance.com/api/v3/trades?symbol={}&limit=50",
+            symbol
+        );
+
+        let response = self.http_client.get(&url).send().await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Failed to fetch trades for {}",
+                coin_id
+            ));
+        }
+
+        let trades: Vec<BinanceTrade> = response.json().await?;
+        Ok(trades)
     }
 
     async fn log_action(

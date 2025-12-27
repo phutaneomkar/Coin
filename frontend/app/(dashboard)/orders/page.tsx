@@ -196,10 +196,10 @@ function OrdersContent() {
     };
 
     // Initial check
-    checkLimitOrders();
+    // checkLimitOrders(); // Handled by global LimitOrderChecker
 
-    // Set up interval to check every 10 seconds
-    const interval = setInterval(checkLimitOrders, 10000);
+    // Set up interval to refresh data every 10 seconds
+    const interval = setInterval(refreshAll, 10000);
 
     // Make manual check available globally for easy console triggering if needed
     (window as any).checkLimitOrders = checkLimitOrdersManual;
@@ -329,9 +329,6 @@ function OrdersContent() {
         const lockedValue = pendingSellQty * currentPrice;
         const lockedOrderValue = pendingSellQty * orderPrice;
 
-        const profitLoss = currentValue - orderValue;
-        const profitLossPercent = orderValue > 0 ? (profitLoss / orderValue) * 100 : 0;
-
         // Find matching order for coin_symbol (try case-insensitive)
         const matchingOrder = orders.find(
           o => o.order_status === 'completed' &&
@@ -339,13 +336,15 @@ function OrdersContent() {
             (o.coin_id?.toLowerCase() === normalizedCoinId || o.coin_id === coinId)
         );
 
-        // Use the validated quantity
+        const coinSymbol = matchingOrder?.coin_symbol || coinId.toUpperCase();
+
+        // Use validated quantity
         const validatedQuantity = availableQty;
 
         const portfolioItem = {
           id: matchingOrder?.id || coinId,
           coin_id: normalizedCoinId, // Use normalized for consistency
-          coin_symbol: matchingOrder?.coin_symbol || coinId.toUpperCase(),
+          coin_symbol: coinSymbol,
           quantity: validatedQuantity,
           lockedQuantity: pendingSellQty, // Track locked quantity
           orderPrice,
@@ -364,7 +363,40 @@ function OrdersContent() {
           pendingSellQty,
           availableQty
         });
-        portfolioDataMap.set(normalizedCoinId, portfolioItem);
+
+        // Group by Symbol to merge duplicates (e.g., 'bitcoin' and 'btc')
+        const symbolKey = coinSymbol.toUpperCase();
+
+        if (portfolioDataMap.has(symbolKey)) {
+          const existing = portfolioDataMap.get(symbolKey);
+
+          // Merge logic
+          existing.quantity += portfolioItem.quantity;
+          existing.lockedQuantity += portfolioItem.lockedQuantity;
+          existing.orderValue += portfolioItem.orderValue;
+          existing.lockedOrderValue += portfolioItem.lockedOrderValue;
+          existing.currentValue += portfolioItem.currentValue;
+          existing.lockedValue += portfolioItem.lockedValue;
+
+          // Recalculate Average Buy Price based on total substituted value
+          const totalQty = existing.quantity + existing.lockedQuantity;
+          const totalInvested = existing.orderValue + existing.lockedOrderValue;
+          existing.orderPrice = totalQty > 0 ? totalInvested / totalQty : 0;
+
+          // Recalculate P&L
+          const totalCurrentVal = existing.currentValue + existing.lockedValue;
+          existing.profitLoss = totalCurrentVal - totalInvested;
+          existing.profitLossPercent = totalInvested > 0 ? (existing.profitLoss / totalInvested) * 100 : 0;
+
+          // If the new item has a larger quantity, maybe prefer its ID for selling? 
+          // For now, keep the ID that was encountered first usually creates a stable list.
+          // But if we want to sell the one with actual balance, we might need logic.
+          // Let's stick to the first one for simplicity unless we see issues.
+
+          console.log(`Portfolio: Merged duplicate for ${symbolKey}`, existing);
+        } else {
+          portfolioDataMap.set(symbolKey, portfolioItem);
+        }
       });
     } else {
       // No holdings data - portfolio is empty (do NOT fallback to orders)

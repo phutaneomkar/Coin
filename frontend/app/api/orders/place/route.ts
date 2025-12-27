@@ -272,21 +272,43 @@ export async function POST(request: NextRequest) {
 
     const result = await response.json();
 
-    // Save order to Supabase
     const quantity = parseFloat(orderData.quantity) || 0;
     const price = orderData.price ? parseFloat(orderData.price) : null;
     const isMarketOrder = orderData.order_type === 'market_order';
-    const totalAmount = price && quantity
-      ? price * quantity
-      : quantity * (result.price || 100); // Use price from API response or fallback
+
+    // Normalize coin_id for consistency
+    const normalizedCoinId = (orderData.coin_id || '').toLowerCase().trim();
 
     // For production, check order status from API response
     const orderStatus = result.status === 'filled' || result.status === 'completed'
       ? 'completed'
       : (isMarketOrder ? 'completed' : 'pending');
 
-    // Normalize coin_id for consistency
-    const normalizedCoinId = (orderData.coin_id || '').toLowerCase().trim();
+    // Ensure we have a valid total amount
+    let totalAmount = price && quantity
+      ? price * quantity
+      : quantity * (result.price || 100);
+
+    // If totalAmount is effectively 0 due to precision, set a minimum or reject
+    if (totalAmount <= 0) {
+      console.warn('PlaceOrder: Total amount is 0 or negative', { quantity, price, resultPrice: result.price, totalAmount });
+      if (quantity > 0) {
+        totalAmount = Math.max(totalAmount, 0.00000001);
+      }
+    }
+
+    console.log('PlaceOrder: Saving to DB', {
+      userId,
+      coinId: normalizedCoinId,
+      quantity,
+      totalAmount,
+      status: orderStatus
+    });
+
+    if (totalAmount <= 0) {
+      return NextResponse.json({ error: 'Order value is too small' }, { status: 400 });
+    }
+
     const { error: dbError } = await supabase.from('orders').insert({
       user_id: userId,
       coin_id: normalizedCoinId, // Use normalized coin_id
