@@ -43,3 +43,30 @@ pub async fn process_order(
 
     validate_order(State(state), Json(request)).await
 }
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+pub struct OrderDto {
+    pub id: uuid::Uuid,
+    pub coin_symbol: String,
+    pub order_type: String,
+    pub order_status: String,
+    pub price_per_unit: Option<rust_decimal::Decimal>,
+    pub quantity: rust_decimal::Decimal,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+pub async fn get_recent_orders(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<OrderDto>>, axum::http::StatusCode> {
+    let orders = sqlx::query_as::<_, OrderDto>(
+        "SELECT id, coin_symbol, order_type, order_status, price_per_unit, quantity, created_at FROM orders ORDER BY created_at DESC LIMIT 10"
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch orders: {}", e);
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(Json(orders))
+}

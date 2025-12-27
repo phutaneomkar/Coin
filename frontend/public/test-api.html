@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+    <h1>API Connection Test</h1>
+    <button onclick="testConnection()">Test Connection</button>
+    <pre id="output"></pre>
+
+    <script>
+        async function testConnection() {
+            const output = document.getElementById('output');
+            output.textContent = 'Testing...';
+
+            try {
+                // Test Health endpoint if it exists, or just try to hit automation start with bad data to see response
+                // Actually start expects POST. 
+                // Let's try to hit strategies list (GET)
+                const res = await fetch('http://127.0.0.1:3001/api/automation/strategies');
+                const text = await res.text();
+                output.textContent = `Status: ${res.status}\nResponse: ${text}`;
+            } catch (e) {
+                output.textContent = `Error: ${e.message}`;
+            }
+        }
+    </script>
+</body>
+
+</html>

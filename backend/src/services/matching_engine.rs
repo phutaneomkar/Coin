@@ -23,6 +23,7 @@ pub struct MatchingEngine {
 pub struct TickerData {
     pub price: Decimal,
     pub volume_quote: Decimal, // 'q' from Binance (USDT volume)
+    pub open_price: Decimal,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +43,7 @@ struct BinanceTicker {
     s: String, // Symbol
     c: String, // Close price
     q: String, // Quote Asset Volume
+    o: String, // Open price
 }
 
 impl MatchingEngine {
@@ -100,9 +102,10 @@ impl MatchingEngine {
 
                                         let coin_id = symbol.replace("usdt", "");
 
-                                        if let (Ok(current_price), Ok(volume_quote)) = (
+                                        if let (Ok(current_price), Ok(volume_quote), Ok(open_price)) = (
                                             ticker.c.parse::<Decimal>(),
                                             ticker.q.parse::<Decimal>(),
+                                            ticker.o.parse::<Decimal>(),
                                         ) {
                                             // Store data for analysis
                                             new_ticker_data.push((
@@ -110,6 +113,7 @@ impl MatchingEngine {
                                                 TickerData {
                                                     price: current_price,
                                                     volume_quote,
+                                                    open_price,
                                                 },
                                             ));
 
@@ -270,35 +274,19 @@ impl MatchingEngine {
             Ok(_) => {
                 info!("✅ Order {} executed successfully in DB", order.id);
 
-                // 🚀 Call Next.js API to execute financial transaction
-                let client = reqwest::Client::new();
-                let params = serde_json::json!({
-                    "orderId": order.id,
-                    "executionPrice": execution_price
-                });
-
-                // Assuming Next.js runs on localhost:3000
-                // TODO: Make URL configurable via ENV
-                let res = client
-                    .post("http://127.0.0.1:3000/api/orders/execute")
-                    .json(&params)
-                    .send()
-                    .await;
-
-                match res {
-                    Ok(resp) => {
-                        if resp.status().is_success() {
-                            info!("💸 Financial Transaction executed for Order {}", order.id);
-                        } else {
-                            error!(
-                                "⚠️ Failed to execute transaction for {}: Status {}",
-                                order.id,
-                                resp.status()
-                            );
-                        }
+                // 🚀 Execute Financial Transaction (Direct DB)
+                // Use token::spawn to run in background, but we need a new connection/pool reference
+                 let p_clone_exec = pool.clone();
+                 let order_id = order_uuid;
+                 let e_price = execution_price;
+                 
+                 tokio::spawn(async move {
+                    if let Err(e) = crate::services::execution::execute_order(&p_clone_exec, order_id, e_price).await {
+                        error!("❌ Financial Execution Failed for order {}: {}", order_id, e);
+                    } else {
+                        info!("💸 Financial Transaction executed for Order {}", order_id);
                     }
-                    Err(e) => error!("❌ Failed to call Execution API for {}: {}", order.id, e),
-                }
+                 });
             }
             Err(e) => error!("❌ Failed to update order {} in DB: {}", order.id, e),
         }

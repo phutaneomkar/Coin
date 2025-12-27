@@ -125,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::orders::validate_order),
         )
         .route("/api/orders/process", post(handlers::orders::process_order))
+        .route("/api/orders/recent", get(handlers::orders::get_recent_orders))
         .route(
             "/api/calculations/profit-loss",
             post(handlers::calculations::calculate_profit_loss),
@@ -132,6 +133,23 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/calculations/portfolio-value",
             post(handlers::calculations::calculate_portfolio_value),
+        )
+        // Automation Routes
+        .route(
+            "/api/automation/start",
+            post(handlers::automation::start_strategy),
+        )
+        .route(
+            "/api/automation/:id/stop",
+            post(handlers::automation::stop_strategy),
+        )
+        .route(
+            "/api/automation/:id/panic",
+            post(handlers::automation::panic_strategy),
+        )
+        .route(
+            "/api/automation/strategies",
+            get(handlers::automation::get_strategies),
         )
         .with_state(state) // Pass the entire AppState
         .layer(

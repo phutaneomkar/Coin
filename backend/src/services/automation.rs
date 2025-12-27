@@ -406,7 +406,7 @@ impl AutomationEngine {
         let analyses = stream::iter(top_coins)
             .map(|(coin_id, ticker_data)| {
                 let self_ref = &self;
-                async move { self_ref.analyze_coin(&coin_id, ticker_data.price).await }
+                async move { self_ref.analyze_coin(&coin_id, ticker_data.price, ticker_data.open_price).await }
             })
             .buffer_unordered(10) // Limit concurrency to avoid IP bans
             .filter_map(|res| async { res.ok() })
@@ -525,6 +525,7 @@ impl AutomationEngine {
         &self,
         coin_id: &str,
         current_price: Decimal,
+        open_price: Decimal,
     ) -> anyhow::Result<CoinAnalysis> {
         // Fetch order book data
         let order_book = self.fetch_order_book(coin_id).await?;
@@ -552,7 +553,7 @@ impl AutomationEngine {
             })
             .sum();
 
-        // Advanced calculation: Predict 10-second price (Simplified)
+        // Advanced calculation: Predict 10-second price
         let total_pressure = buy_pressure + sell_pressure;
         let momentum = if total_pressure > Decimal::ZERO {
             (buy_pressure - sell_pressure) / total_pressure
@@ -560,8 +561,24 @@ impl AutomationEngine {
             Decimal::ZERO
         };
 
-        let time_factor = Decimal::from(1) / Decimal::from(100); // 0.01
-        let predicted_price_10s = current_price * (Decimal::ONE + momentum * time_factor);
+        // NEW: Incorporate 24h Trend
+        let trend_24h = if open_price > Decimal::ZERO {
+             (current_price - open_price) / open_price
+        } else {
+             Decimal::ZERO
+        };
+
+        // Prediction Formula:
+        // Base: Current Price
+        // Momentum Impact: max +/- 5% (0.05 coefficient) based on order book
+        // Trend Impact: max +/- 10% (0.10 coefficient) based on 24h trend
+        // This allows significantly higher volatility predictions
+        let momentum_factor = Decimal::from_parts(5, 0, 0, false, 2); // 0.05
+        let trend_factor = Decimal::from_parts(1, 0, 0, false, 1); // 0.10
+
+        let combined_bias = (momentum * momentum_factor) + (trend_24h * trend_factor);
+        
+        let predicted_price_10s = current_price * (Decimal::ONE + combined_bias);
 
         let price_change = predicted_price_10s - current_price;
         let price_change_percent = if current_price > Decimal::ZERO {
@@ -569,6 +586,11 @@ impl AutomationEngine {
         } else {
             Decimal::ZERO
         };
+        
+        // Log deep analysis for top opportunities to debug "incorrect" claims
+        if price_change_percent > Decimal::from(1) {
+            info!("🔬 Analysis {}: Momentum: {}, Trend24h: {}, Pred% : {}", coin_id, momentum, trend_24h, price_change_percent);
+        }
 
         Ok(CoinAnalysis {
             coin_id: coin_id.to_string(),
@@ -622,6 +644,89 @@ impl AutomationEngine {
         .bind(amount)
         .bind(profit)
         .execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn force_exit_strategy(&self, id: Uuid) -> anyhow::Result<()> {
+        info!("🚨 FORCE EXIT requested for strategy {}", id);
+
+        // 1. Fetch Strategy
+        let strategy = sqlx::query_as::<_, Strategy>("SELECT * FROM strategies WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        let strategy = match strategy {
+            Some(s) => s,
+            None => {
+                warn!("Strategy {} not found for force exit", id);
+                return Ok(());
+            }
+        };
+
+        // 2. Cancel Pending Order if exists
+        if let Some(order_id) = strategy.current_order_id {
+            info!("Cancelling pending order {}", order_id);
+            sqlx::query("UPDATE orders SET order_status = 'cancelled' WHERE id = $1")
+                .bind(order_id)
+                .execute(&self.pool)
+                .await?;
+        }
+
+        // 3. Sell Active Position if exists
+        if let Some(coin_id) = &strategy.current_coin_id {
+            if let Some(entry_price) = strategy.entry_price {
+                 if entry_price > Decimal::ZERO {
+                    // Fetch current price to estimate return (optional, matching engine handles execution price)
+                    // Just place Market Sell
+                    let prices = self.matching_engine.get_prices().await;
+                    let current_price = prices.get(coin_id).cloned().unwrap_or(entry_price);
+
+                    let quantity = strategy.amount / entry_price;
+                    let sell_order_id = Uuid::new_v4();
+                    let total_amount = current_price * quantity;
+
+                    info!("Placing FORCE MARKET SELL for {} {}", quantity, coin_id);
+                    
+                    sqlx::query(
+                        "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'market', $5, $6, $7, 'pending')"
+                    )
+                    .bind(sell_order_id)
+                    .bind(strategy.user_id)
+                    .bind(coin_id)
+                    .bind(coin_id.to_uppercase())
+                    .bind(quantity)
+                    .bind(current_price)
+                    .bind(total_amount)
+                    .execute(&self.pool).await?;
+
+                    // Add to matching engine
+                    self.matching_engine
+                        .add_order(
+                            sell_order_id.to_string(),
+                            coin_id.to_string(),
+                            "sell".to_string(),
+                            current_price, // For market order, this might be treated as limit in current simple engine, but let's hope it executes against current price
+                            quantity,
+                        )
+                        .await;
+                    
+                    // Log the Panic Sell
+                    self.log_action(
+                        strategy.id,
+                        "sell_force",
+                        coin_id,
+                        current_price,
+                        total_amount,
+                        Some(total_amount - strategy.amount), // approx profit/loss
+                    ).await?;
+                 }
+            }
+        }
+
+        // 4. Stop Strategy
+        self.stop_strategy(id, "force_stopped").await?;
+
         Ok(())
     }
 

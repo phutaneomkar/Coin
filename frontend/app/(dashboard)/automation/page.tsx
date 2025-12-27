@@ -23,16 +23,18 @@ export default function AutomationPage() {
   }, []);
 
   const fetchHistory = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data } = await supabase
-      .from('strategies')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (data) setHistory(data);
+    try {
+      // Use the proxy endpoint which handles authentication (cookie or session)
+      const res = await fetch('/api/automation/strategies');
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data);
+      } else {
+        console.error('Failed to fetch strategies history');
+      }
+    } catch (error) {
+      console.error('Error fetching history:', error);
+    }
   };
 
   const handleStart = async () => {
@@ -47,11 +49,10 @@ export default function AutomationPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          priceLimit,
-          percentage,
-          orderCount: orderType,
-          durationHours: hours || '0',
-          durationMinutes: minutes || '0'
+          amount: priceLimit,
+          profit_percentage: percentage,
+          total_iterations: parseInt(orderType),
+          duration_minutes: (parseInt(hours || '0') * 60) + parseInt(minutes || '0'),
         }),
       });
 
