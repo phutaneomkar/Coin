@@ -36,7 +36,7 @@ async function debugHoldings() {
 
     // Check for duplicates
     const map = new Map();
-    const duplicates = [];
+    const duplicates: any[] = [];
 
     holdings.forEach(h => {
         const key = h.coin_id.toLowerCase().trim();
