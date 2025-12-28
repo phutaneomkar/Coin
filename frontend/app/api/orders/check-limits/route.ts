@@ -174,8 +174,16 @@ export async function GET(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    let userId = user?.id;
+    if (!userId) {
+      // Check for app_access cookie
+      const hasAccess = request.cookies.has('app_access');
+      if (hasAccess) {
+        // Use default user ID if cookie is present
+        userId = '00000000-0000-0000-0000-000000000000'; // DEFAULT_USER_ID
+      } else {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
     }
 
     // Get all pending limit orders

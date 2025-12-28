@@ -44,6 +44,11 @@ async fn main() -> anyhow::Result<()> {
             retry_count + 1,
             MAX_RETRIES
         );
+        
+        // Debug: Parse and print host to check for typos
+        if let Ok(parsed) = url::Url::parse(&config.database_url) {
+            println!("🔍 Resolving host: {:?}", parsed.host_str());
+        }
 
         match Database::new(&config.database_url).await {
             Ok(db) => {

@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
     try {
         // Ideally we should filter by user here in the future
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001';
-        const res = await fetch(`${baseUrl}/api/automation/strategies`);
+        const res = await fetch(`${baseUrl}/api/automation/strategies`, { cache: 'no-store' });
 
         const contentType = res.headers.get("content-type");
         let data;
