@@ -33,39 +33,51 @@ async fn main() -> anyhow::Result<()> {
     // tracing::info!("DEBUG: Loaded DATABASE_URL: {}", config.database_url.replace(":", "***"));
 
     // Initialize database
-    println!(
-        "🔌 Attempting to connect to database... URL: {}",
-        redact_database_url(&config.database_url)
-    );
-    let db = match Database::new(&config.database_url).await {
-        Ok(db) => {
-            println!("✅ Database connection successful!");
-            db
-        }
-        Err(primary_err) => {
-            if let Some(fallback_url) = &config.database_url_fallback {
-                println!(
-                    "⚠️ Primary database connection failed, trying fallback... URL: {}",
-                    redact_database_url(fallback_url)
-                );
+    // Retry database connection loop
+    let mut retry_count = 0;
+    const MAX_RETRIES: u32 = 20; // Try for ~100 seconds (20 * 5s)
+    
+    let db = loop {
+        println!(
+            "🔌 Attempting to connect to database... URL: {} (Attempt {}/{})",
+            redact_database_url(&config.database_url),
+            retry_count + 1,
+            MAX_RETRIES
+        );
 
-                match Database::new(fallback_url).await {
-                    Ok(db) => {
-                        println!("✅ Database connection successful (fallback)!");
-                        db
-                    }
-                    Err(fallback_err) => {
-                        println!("❌ Database connection failed (primary): {:?}", primary_err);
-                        println!(
-                            "❌ Database connection failed (fallback): {:?}",
-                            fallback_err
-                        );
-                        return Err(fallback_err);
+        match Database::new(&config.database_url).await {
+            Ok(db) => {
+                println!("✅ Database connection successful!");
+                break db;
+            }
+            Err(primary_err) => {
+                println!("⚠️ Primary connection failed: {:?}", primary_err);
+                
+                // Try fallback if available
+                if let Some(fallback_url) = &config.database_url_fallback {
+                    println!(
+                        "🔄 Trying fallback... URL: {}",
+                        redact_database_url(fallback_url)
+                    );
+                    match Database::new(fallback_url).await {
+                        Ok(db) => {
+                            println!("✅ Database connection successful (fallback)!");
+                            break db;
+                        }
+                        Err(fallback_err) => {
+                            println!("❌ Fallback failed: {:?}", fallback_err);
+                        }
                     }
                 }
-            } else {
-                println!("❌ Database connection failed: {:?}", primary_err);
-                return Err(primary_err);
+
+                retry_count += 1;
+                if retry_count >= MAX_RETRIES {
+                    println!("❌ All connection attempts failed. Exiting.");
+                    return Err(primary_err);
+                }
+                
+                println!("⏳ Retrying in 5 seconds...");
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
     };
