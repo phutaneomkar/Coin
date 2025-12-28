@@ -62,19 +62,13 @@ struct BinanceTrade {
     isBestMatch: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct BinanceKline {
-    // [Open Time, Open, High, Low, Close, Volume, Close Time, ...]
-    // We only care about Close price (index 4)
-    #[serde(rename = "4")]
-    close: String,
-}
+
 
 #[derive(Debug, Clone)]
 struct CoinAnalysis {
     coin_id: String,
     current_price: Decimal,
-    predicted_price_1m: Decimal,
+    predicted_price_10m: Decimal,
     price_change_percent: Decimal,
     #[allow(dead_code)]
     buy_pressure: Decimal, // Total buy quantity * price
@@ -444,10 +438,31 @@ impl AutomationEngine {
         // Let's say: If we are in profit > 0.5%, trail by 0.5%.
         // If we are loss, use fixed stop loss of -2%. (Hardcoded for safety)
         
+        // --- ATR TRAILING STOP LOGIC ---
+        // Fetch Klines for ATR (15m candles context)
+        let klines_atr = self.fetch_klines(coin_id, 20).await.unwrap_or_default();
+        let atr = Self::calculate_atr(&klines_atr, 14);
+
         let stop_price = if profit_pct > Decimal::from_parts(5, 0, 0, false, 1) { // > 0.5% profit
-             high_water_mark * Decimal::from_str("0.995").unwrap() // Trail by 0.5%
+             // TRAIL: HighWaterMark - 2 * ATR
+             if atr > Decimal::ZERO {
+                 let dynamic_stop = high_water_mark - (atr * Decimal::from(2));
+                 // Sanity check: Don't let stop loss be ABOVE current price (impossible but good safety)
+                 if dynamic_stop >= current_price {
+                     current_price * Decimal::from_str("0.999").unwrap() // Tight close
+                 } else {
+                     dynamic_stop
+                 }
+             } else {
+                 high_water_mark * Decimal::from_str("0.995").unwrap() // Fallback 0.5% trail
+             }
         } else {
-             entry_price * Decimal::from_str("0.98").unwrap() // Fixed Hard Stop at -2%
+             // INITIAL STOP: Entry - 3 * ATR (Give it room to breathe)
+             if atr > Decimal::ZERO {
+                 entry_price - (atr * Decimal::from(3))
+             } else {
+                 entry_price * Decimal::from_str("0.97").unwrap() // Fallback 3% hard stop
+             }
         };
 
         let target_price = entry_price * (Decimal::ONE + (target_pct / Decimal::from(100)));
@@ -525,20 +540,43 @@ impl AutomationEngine {
         strategy: &Strategy,
         _prices: &HashMap<String, Decimal>,
     ) -> anyhow::Result<()> {
-        // ANALYZE TOP LIQUID COINS (Top 50 by Volume)
+        // ANALYZE TOP LIQUID COINS (Top 30 by Volume)
         info!(
-            "🔍 Strategy {}: Fetching Top 50 High-Volume Coins...",
+            "🔍 Strategy {}: Fetching Top 30 High-Volume Coins...",
             strategy.id
         );
 
-        let top_coins = self.matching_engine.get_top_volume_coins(50).await;
+        let top_coins = self.matching_engine.get_top_volume_coins(30).await;
 
-        let blacklisted_coins = vec!["usdc", "usdt", "fdusd", "dai", "tusd", "busd", "wbtc"];
+        let blacklisted_coins = vec![
+            "usdc", "usdt", "fdusd", "dai", "tusd", "busd", "wbtc", "usdd",
+            "btcup", "btcdown", "ethup", "ethdown", "bnbup", "bnbdown", "xrpup", "xrpdown", "linkup", "linkdown", "ltcup", "ltcdown"
+        ];
 
         let filtered_coins: HashMap<String, crate::services::matching_engine::TickerData> = top_coins
             .into_iter()
-            .filter(|(coin_id, _)| !blacklisted_coins.contains(&coin_id.as_str()))
+            .filter(|(coin_id, data)| {
+                 if blacklisted_coins.contains(&coin_id.as_str()) { return false; }
+                 
+                 // PRE-FILTER 1: Liquidity Check (> 1M USDT 24h Volume)
+                 if data.volume_quote < Decimal::from(1_000_000) { return false; }
+
+                 // PRE-FILTER 2: Momentum Check
+                 // We want coins that are MOVING. (Change > 1% or < -1%)
+                 let open = data.open_price;
+                 let close = data.price;
+                 if open <= Decimal::ZERO { return false; }
+                 
+                 let change_pct = (close - open) / open * Decimal::from(100);
+                 if change_pct.abs() < Decimal::from(1) {
+                      return false; // Skip boring side-ways coins
+                 }
+                 
+                 true
+            })
             .collect();
+
+        info!("🛡️ Strategy {}: Optimized candidate list to {} coins (from 30)", strategy.id, filtered_coins.len());
 
         if filtered_coins.is_empty() {
             warn!(
@@ -583,8 +621,8 @@ impl AutomationEngine {
             .max_by(|a, b| a.price_change_percent.cmp(&b.price_change_percent));
 
         if let Some(best) = best_coin {
-            info!("🎯 Strategy {}: Best opportunity found! {} predicted to increase {}% (Current: {}, Predicted: {})", 
-                strategy.id, best.coin_id, best.price_change_percent, best.current_price, best.predicted_price_1m);
+            info!("🎯 Strategy {}: Best opportunity found! {} predicted to increase {}% (Current: {}, Predicted 10m: {})", 
+                strategy.id, best.coin_id, best.price_change_percent, best.current_price, best.predicted_price_10m);
 
             // ⚡ RACE CONDITION FIX: Re-check if strategy is still running before executing BUY
             let is_running = sqlx::query_scalar::<_, bool>(
@@ -814,10 +852,11 @@ impl AutomationEngine {
              Decimal::ZERO
         };
 
-        // Weights
-        let ob_factor = Decimal::from_parts(1, 0, 0, false, 2); 
-        let trend_factor = Decimal::from_parts(5, 0, 0, false, 1); 
-        let trade_factor = Decimal::from_parts(1, 0, 0, false, 1); 
+        // Weights (Tuned for 10m Horizon)
+        // Order Book noise is less relevant for 10m, Trend is more important
+        let ob_factor = Decimal::from_parts(5, 0, 0, false, 3); // 0.005 (Reduced from 0.01)
+        let trend_factor = Decimal::from_parts(6, 0, 0, false, 1); // 0.6 (Increased from 0.5)
+        let trade_factor = Decimal::from_parts(1, 0, 0, false, 1); // 0.1
 
         let base_momentum = (ob_momentum * ob_factor) + (trend_24h * trend_factor) + (trade_momentum * trade_factor);
         
@@ -825,12 +864,13 @@ impl AutomationEngine {
         
         let combined_bias = (base_momentum + velocity_bias + rsi_bias + vwap_bias + wall_bias + btc_trend_score) * volatility_scaler;
         
-        let time_scaler = Decimal::from(6); 
+        // Project 10 minutes out
+        let time_scaler = Decimal::from(10); 
         let predicted_bias = combined_bias * time_scaler;
 
-        let predicted_price_1m = current_price * (Decimal::ONE + predicted_bias);
+        let predicted_price_10m = current_price * (Decimal::ONE + predicted_bias);
 
-        let price_change = predicted_price_1m - current_price;
+        let price_change = predicted_price_10m - current_price;
         let price_change_percent = if current_price > Decimal::ZERO {
             (price_change / current_price) * Decimal::from(100)
         } else {
@@ -838,14 +878,14 @@ impl AutomationEngine {
         };
         
         if price_change_percent > Decimal::from(1) {
-            info!("🔬 Analysis {}: RSI: {}, BTC_Bias: {}, Wall_Bias: {}, Total%: {}", 
-                coin_id, rsi, btc_trend_score, wall_bias, price_change_percent);
+            info!("🔬 Analysis {}: RSI: {}, BTC: {}, Wall: {}, VWAP: {}, Trend: {}, Total%: {}", 
+                coin_id, rsi, btc_trend_score, wall_bias, vwap_bias, trend_24h, price_change_percent);
         }
 
         Ok(CoinAnalysis {
             coin_id: coin_id.to_string(),
             current_price,
-            predicted_price_1m,
+            predicted_price_10m,
             price_change_percent,
             buy_pressure,
             sell_pressure,
@@ -959,6 +999,27 @@ impl AutomationEngine {
         let rsi = Decimal::from(100) - (Decimal::from(100) / (Decimal::ONE + rs));
         
         rsi
+    }
+
+    fn calculate_atr(prices: &[Decimal], period: usize) -> Decimal {
+        if prices.len() <= period {
+            return Decimal::ZERO;
+        }
+
+        let mut tr_sum = Decimal::ZERO;
+
+        // Simple ATR (Average True Range) approximation using just High-Low (since we only have Close here really, but let's approximate with Close volatility)
+        // Wait, fetch_klines only returns CLOSES. 
+        // True Range needs High/Low/Close.
+        // As a fallback for "Close-only" data: We used Absolute Change.
+        
+        for i in 1..prices.len() {
+             let change = (prices[i] - prices[i-1]).abs();
+             tr_sum += change;
+        }
+        
+        let avg_tr = tr_sum / Decimal::from(prices.len() - 1);
+        avg_tr
     }
 
     async fn get_btc_trend(&self) -> anyhow::Result<Decimal> {
