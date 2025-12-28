@@ -467,16 +467,23 @@ impl AutomationEngine {
 
         let top_coins = self.matching_engine.get_top_volume_coins(50).await;
 
-        if top_coins.is_empty() {
+        let blacklisted_coins = vec!["usdc", "usdt", "fdusd", "dai", "tusd", "busd", "wbtc"];
+
+        let filtered_coins: HashMap<String, crate::services::matching_engine::TickerData> = top_coins
+            .into_iter()
+            .filter(|(coin_id, _)| !blacklisted_coins.contains(&coin_id.as_str()))
+            .collect();
+
+        if filtered_coins.is_empty() {
             warn!(
-                "⚠️ Strategy {}: No liquid coins found yet. Waiting for market data...",
+                "⚠️ Strategy {}: No liquid coins found after filtering. Waiting for market data...",
                 strategy.id
             );
             return Ok(());
         }
 
         // Parallel Analysis with Concurrency Limit (10 concurrent requests)
-        let analyses = stream::iter(top_coins)
+        let analyses = stream::iter(filtered_coins)
             .map(|(coin_id, ticker_data)| {
                 let self_ref = &self;
                 async move { self_ref.analyze_coin(&coin_id, ticker_data.price, ticker_data.open_price).await }
@@ -656,12 +663,22 @@ impl AutomationEngine {
         // Calculate pressure from TRADE HISTORY
         let mut trade_buy_vol = Decimal::ZERO;
         let mut trade_sell_vol = Decimal::ZERO;
+        let mut min_price = Decimal::MAX;
+        let mut max_price = Decimal::ZERO;
+        let mut sum_price = Decimal::ZERO;
+        let mut trade_count = 0;
 
         for trade in &trades {
             let qty: Decimal = trade.qty.parse().unwrap_or(Decimal::ZERO);
             let price: Decimal = trade.price.parse().unwrap_or(Decimal::ZERO);
             let vol = price * qty;
             
+            // Track Price Stats for Volatility
+            if price < min_price { min_price = price; }
+            if price > max_price { max_price = price; }
+            sum_price += price;
+            trade_count += 1;
+
             // isBuyerMaker = true -> Maker is BUYER -> Taker is SELLER -> SOLD side
             // isBuyerMaker = false -> Maker is SELLER -> Taker is BUYER -> BOUGHT side
             if trade.isBuyerMaker {
@@ -670,6 +687,23 @@ impl AutomationEngine {
                 trade_buy_vol += vol;
             }
         }
+        
+        // 🛡️ VOLATILITY FILTER: If price hasn't moved in last 50 trades, it's a dead coin.
+        let volatility_pct = if max_price > Decimal::ZERO && min_price < Decimal::MAX {
+             (max_price - min_price) / min_price
+        } else {
+             Decimal::ZERO
+        };
+
+        // 🛡️ VELOCITY CHECK: Is the latest price higher than the average price?
+        let avg_price = if trade_count > 0 { sum_price / Decimal::from(trade_count) } else { current_price };
+        let velocity_bias = if current_price > avg_price {
+             // Uptrending in short term
+             Decimal::from_parts(1, 0, 0, false, 2) // +0.01 (1% bonus)
+        } else {
+             // Downtrending or flat
+             Decimal::from_parts(1, 0, 0, true, 2) // -0.01 (1% penalty)
+        };
 
         // Advanced calculation: Predict 10-second price
         let total_pressure = buy_pressure + sell_pressure;
@@ -694,14 +728,24 @@ impl AutomationEngine {
         };
 
         // Prediction Formula Weights:
-        // OrderBook Momentum: 0.05 (Imbalance in pending orders)
-        // Trend (24h): 0.10 (General direction)
-        // Trade Flow: 0.20 (Real executed momentum - HIGH IMPORTANCE)
-        let ob_factor = Decimal::from_parts(5, 0, 0, false, 2); // 0.05
-        let trend_factor = Decimal::from_parts(1, 0, 0, false, 1); // 0.10
-        let trade_factor = Decimal::from_parts(2, 0, 0, false, 1); // 0.20
+        // OrderBook Momentum: 0.01 (1% max impact)
+        // Trend (24h): 0.50 (50% impact - HIGH - We want to follow the main trend)
+        // Trade Flow: 0.10 (10% max impact)
+        // Velocity (Short Term): Added as direct bias
+        // Volatility Scaler: If volatility is 0, momentum means nothing.
+        
+        let ob_factor = Decimal::from_parts(1, 0, 0, false, 2); // 0.01
+        let trend_factor = Decimal::from_parts(5, 0, 0, false, 1); // 0.50 
+        let trade_factor = Decimal::from_parts(1, 0, 0, false, 1); // 0.10
 
-        let combined_bias = (ob_momentum * ob_factor) + (trend_24h * trend_factor) + (trade_momentum * trade_factor);
+        let base_momentum = (ob_momentum * ob_factor) + (trend_24h * trend_factor) + (trade_momentum * trade_factor);
+        
+        // Final Prediction: Base + Velocity, SCALED by Volatility
+        // Logic: If Volatility is 0, bias becomes 0 -> Prediction = current_price (No Buy).
+        // If Volatility is high (e.g. 2%), and Momentum is high, Prediction spikes.
+        let volatility_scaler = if volatility_pct > Decimal::ZERO { volatility_pct * Decimal::from(10) } else { Decimal::ZERO }; // Amplify volatility impact
+        
+        let combined_bias = (base_momentum + velocity_bias) * volatility_scaler;
         
         let predicted_price_10s = current_price * (Decimal::ONE + combined_bias);
 

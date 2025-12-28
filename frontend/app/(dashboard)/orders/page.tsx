@@ -632,103 +632,163 @@ function OrdersContent() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto -mx-4 sm:mx-0">
-                <table className="min-w-full divide-y divide-gray-700">
-                  <thead className="bg-gray-700">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Coin</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Quantity (Avail + Lock)</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Order Price</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Current Price</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Order Value</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Current Value</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">P&L</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-gray-800 divide-y divide-gray-700">
-                    {portfolioData.map((item) => {
-                      // Calculate Totals for Display
-                      const totalQuantity = item.quantity + (item.lockedQuantity || 0);
-                      const totalOrderValue = item.orderValue + (item.lockedOrderValue || 0);
-                      const totalCurrentValue = item.currentValue + (item.lockedValue || 0);
+              <>
+                <div className="md:hidden space-y-4 px-4 pb-4">
+                  {portfolioData.map((item) => {
+                    const totalOrderValue = item.orderValue + (item.lockedOrderValue || 0);
+                    const totalCurrentValue = item.currentValue + (item.lockedValue || 0);
+                    const totalProfitLoss = totalCurrentValue - totalOrderValue;
+                    const totalProfitLossPercent = totalOrderValue > 0 ? (totalProfitLoss / totalOrderValue) * 100 : 0;
 
-                      const totalProfitLoss = totalCurrentValue - totalOrderValue;
-                      const totalProfitLossPercent = totalOrderValue > 0 ? (totalProfitLoss / totalOrderValue) * 100 : 0;
+                    return (
+                      <div key={item.id || item.coin_id} className="bg-gray-700/50 p-4 rounded-xl border border-gray-600">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <h3 className="text-white font-bold text-lg">{item.coin_symbol}</h3>
+                            <p className="text-sm text-gray-400">
+                              {item.quantity.toLocaleString('en-US', { maximumFractionDigits: 6 })} Avail
+                              {item.lockedQuantity > 0 && <span className="text-yellow-500 text-xs ml-1"> +{item.lockedQuantity.toFixed(4)} Lock</span>}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <div className={`text-lg font-bold ${totalProfitLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {totalProfitLoss >= 0 ? '+' : ''}${totalProfitLoss.toFixed(2)}
+                            </div>
+                            <div className={`text-xs ${totalProfitLossPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {totalProfitLossPercent >= 0 ? '+' : ''}{totalProfitLossPercent.toFixed(2)}%
+                            </div>
+                          </div>
+                        </div>
 
-                      return (
-                        <tr key={item.id || item.coin_id} className="hover:bg-gray-700 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
-                            {item.coin_symbol}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                            {item.lockedQuantity > 0 ? (
-                              <div className="flex flex-col">
-                                <span>{item.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 })} <span className="text-gray-500 text-xs">(Available)</span></span>
-                                <span className="text-xs text-yellow-500">+{item.lockedQuantity.toLocaleString('en-US', { maximumFractionDigits: 8 })} (Locked)</span>
-                              </div>
-                            ) : (
-                              item.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 })
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                            ${item.orderPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                            {item.currentPrice > 0 ? (
-                              `$${item.currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            ) : (
-                              <span className="text-gray-500">Loading...</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                            ${totalOrderValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                            {item.currentPrice > 0 ? (
-                              `$${totalCurrentValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            ) : (
-                              <span className="text-gray-500">Loading...</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            {item.currentPrice > 0 ? (
-                              <div className="flex flex-col">
-                                <span className={totalProfitLoss >= 0 ? 'text-green-400' : 'text-red-400'}>
-                                  {totalProfitLoss >= 0 ? '+' : ''}${totalProfitLoss.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                                <span className={`text-xs ${totalProfitLossPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                  {totalProfitLossPercent >= 0 ? '+' : ''}{totalProfitLossPercent.toFixed(2)}%
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-gray-500">-</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <button
-                              onClick={() => {
-                                // Ensure coin_id is normalized (lowercase) for consistency
-                                const normalizedCoinId = (item.coin_id || '').toLowerCase().trim();
-                                setSelectedCoin({
-                                  coinId: normalizedCoinId, // Use normalized coin_id
-                                  coinSymbol: item.coin_symbol,
-                                  currentPrice: item.currentPrice > 0 ? item.currentPrice : 0,
-                                });
-                                setSellModalOpen(true);
-                              }}
-                              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              disabled={item.currentPrice === 0 || item.quantity <= 0}
-                            >
-                              Sell
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-400 mb-4 bg-gray-800/50 p-2 rounded">
+                          <div>
+                            <span className="block text-gray-500">Avg Buy</span>
+                            <span className="text-white">${item.orderPrice.toFixed(2)}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="block text-gray-500">Current</span>
+                            <span className="text-white">${item.currentPrice.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            const normalizedCoinId = (item.coin_id || '').toLowerCase().trim();
+                            setSelectedCoin({
+                              coinId: normalizedCoinId,
+                              coinSymbol: item.coin_symbol,
+                              currentPrice: item.currentPrice > 0 ? item.currentPrice : 0,
+                            });
+                            setSellModalOpen(true);
+                          }}
+                          disabled={item.currentPrice === 0 || item.quantity <= 0}
+                          className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg font-bold text-sm"
+                        >
+                          SELL {item.coin_symbol}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto -mx-4 sm:mx-0">
+                  <table className="min-w-full divide-y divide-gray-700">
+                    <thead className="bg-gray-700">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Coin</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Quantity (Avail + Lock)</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Order Price</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Current Price</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Order Value</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Current Value</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">P&L</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-gray-800 divide-y divide-gray-700">
+                      {portfolioData.map((item) => {
+                        // Calculate Totals for Display
+                        const totalQuantity = item.quantity + (item.lockedQuantity || 0);
+                        const totalOrderValue = item.orderValue + (item.lockedOrderValue || 0);
+                        const totalCurrentValue = item.currentValue + (item.lockedValue || 0);
+
+                        const totalProfitLoss = totalCurrentValue - totalOrderValue;
+                        const totalProfitLossPercent = totalOrderValue > 0 ? (totalProfitLoss / totalOrderValue) * 100 : 0;
+
+                        return (
+                          <tr key={item.id || item.coin_id} className="hover:bg-gray-700 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
+                              {item.coin_symbol}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                              {item.lockedQuantity > 0 ? (
+                                <div className="flex flex-col">
+                                  <span>{item.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 })} <span className="text-gray-500 text-xs">(Available)</span></span>
+                                  <span className="text-xs text-yellow-500">+{item.lockedQuantity.toLocaleString('en-US', { maximumFractionDigits: 8 })} (Locked)</span>
+                                </div>
+                              ) : (
+                                item.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 })
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                              ${item.orderPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                              {item.currentPrice > 0 ? (
+                                `$${item.currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              ) : (
+                                <span className="text-gray-500">Loading...</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                              ${totalOrderValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                              {item.currentPrice > 0 ? (
+                                `$${totalCurrentValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              ) : (
+                                <span className="text-gray-500">Loading...</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              {item.currentPrice > 0 ? (
+                                <div className="flex flex-col">
+                                  <span className={totalProfitLoss >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                    {totalProfitLoss >= 0 ? '+' : ''}${totalProfitLoss.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <span className={`text-xs ${totalProfitLossPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {totalProfitLossPercent >= 0 ? '+' : ''}{totalProfitLossPercent.toFixed(2)}%
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-gray-500">-</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              <button
+                                onClick={() => {
+                                  // Ensure coin_id is normalized (lowercase) for consistency
+                                  const normalizedCoinId = (item.coin_id || '').toLowerCase().trim();
+                                  setSelectedCoin({
+                                    coinId: normalizedCoinId, // Use normalized coin_id
+                                    coinSymbol: item.coin_symbol,
+                                    currentPrice: item.currentPrice > 0 ? item.currentPrice : 0,
+                                  });
+                                  setSellModalOpen(true);
+                                }}
+                                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={item.currentPrice === 0 || item.quantity <= 0}
+                              >
+                                Sell
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -740,7 +800,60 @@ function OrdersContent() {
           <div className="px-6 py-4 border-b border-gray-700">
             <h2 className="text-lg font-semibold text-white">Order History</h2>
           </div>
-          <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <div className="md:hidden space-y-4 px-4 pb-4 pt-2">
+            {orders.length === 0 ? (
+              <p className="text-center text-gray-400 py-8">No orders yet</p>
+            ) : (
+              orders.map(order => (
+                <div key={order.id} className="bg-gray-700/50 p-4 rounded-xl border border-gray-600">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${order.order_type === 'buy' ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'
+                        }`}>
+                        {order.order_type}
+                      </span>
+                      <span className="text-white font-bold">{order.coin_symbol}</span>
+                    </div>
+                    <div className="text-xs text-gray-400 text-right">
+                      <div>{new Date(order.order_date).toLocaleDateString()}</div>
+                      <div>{new Date(order.order_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-y-2 text-sm mb-3">
+                    <div>
+                      <span className="text-gray-500 text-xs block">Quantity</span>
+                      <span className="text-white">{order.quantity.toLocaleString()}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-gray-500 text-xs block">Price</span>
+                      <span className="text-white">${order.price_per_unit?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || 'Market'}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-3 border-t border-gray-600/50">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${order.order_status === 'completed' ? 'bg-green-900/30 text-green-400' :
+                        order.order_status === 'pending' ? 'bg-yellow-900/30 text-yellow-400' :
+                          'bg-red-900/30 text-red-400'
+                      }`}>
+                      {order.order_status}
+                    </span>
+
+                    {order.order_status === 'pending' && (
+                      <button
+                        onClick={() => cancelOrder(order.id)}
+                        className="text-red-400 hover:text-red-300 text-xs font-medium px-3 py-1 bg-red-900/20 rounded hover:bg-red-900/30 transition-colors"
+                      >
+                        Cancel Order
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto -mx-4 sm:mx-0">
             <table className="min-w-full divide-y divide-gray-700">
               <thead className="bg-gray-700">
                 <tr>

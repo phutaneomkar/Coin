@@ -124,31 +124,31 @@ export function OrderBook({ coinId, coinSymbol, currentPrice }: OrderBookProps) 
 
   return (
     <div className="h-full flex flex-col">
-      {/* Filter Buttons */}
-      <div className="flex gap-2 mb-4">
+      {/* Filter Buttons - Segmented Control Style */}
+      <div className="flex bg-gray-900 p-1 rounded-lg mb-4 border border-gray-700">
         <button
           onClick={() => setFilter('all')}
-          className={`px-3 py-1 rounded text-sm transition-colors ${filter === 'all'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${filter === 'all'
+            ? 'bg-blue-600 text-white shadow-lg'
+            : 'text-gray-400 hover:text-white hover:bg-gray-800'
             }`}
         >
           All
         </button>
         <button
           onClick={() => setFilter('bids')}
-          className={`px-3 py-1 rounded text-sm transition-colors ${filter === 'bids'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${filter === 'bids'
+            ? 'bg-blue-600 text-white shadow-lg'
+            : 'text-gray-400 hover:text-white hover:bg-gray-800'
             }`}
         >
           Bids
         </button>
         <button
           onClick={() => setFilter('asks')}
-          className={`px-3 py-1 rounded text-sm transition-colors ${filter === 'asks'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${filter === 'asks'
+            ? 'bg-blue-600 text-white shadow-lg'
+            : 'text-gray-400 hover:text-white hover:bg-gray-800'
             }`}
         >
           Asks
@@ -156,25 +156,31 @@ export function OrderBook({ coinId, coinSymbol, currentPrice }: OrderBookProps) 
       </div>
 
       {/* Order Book Table */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pr-3 scrollbar-thin scrollbar-thumb-gray-700">
         {/* Header */}
-        <div className="grid grid-cols-3 gap-2 text-xs text-gray-400 mb-2 pb-2 border-b border-gray-700">
-          <div className="text-right">Price (USD)</div>
+        <div className="grid grid-cols-[1fr_0.8fr_1.2fr] gap-2 text-[10px] sm:text-xs text-gray-400 mb-2 pb-2 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
+          <div className="text-left">Price (USD)</div>
           <div className="text-right">Qty ({coinSymbol})</div>
           <div className="text-right">Total (USD)</div>
         </div>
 
         {/* Asks (Sell Orders) */}
         {(filter === 'all' || filter === 'asks') && (
-          <div className="mb-4">
+          <div className="mb-2">
             {asks.map((ask, index) => (
               <div
                 key={`ask-${index}`}
-                className="grid grid-cols-3 gap-2 text-xs py-1 hover:bg-gray-700/50 rounded cursor-pointer"
+                className="grid grid-cols-[1fr_0.8fr_1.2fr] gap-2 text-[11px] sm:text-xs py-1 hover:bg-gray-700/50 rounded cursor-pointer transition-colors relative"
               >
-                <div className="text-right text-red-400">{formatPrice(ask.price)}</div>
-                <div className="text-right text-gray-300">{formatQuantity(ask.quantity)}</div>
-                <div className="text-right text-gray-300">{formatTotal(ask.total)}</div>
+                {/* Visual Depth Bar (Optional - subtle background) */}
+                <div
+                  className="absolute right-0 top-0 bottom-0 bg-red-900/10 rounded-r"
+                  style={{ width: `${Math.min(100, (ask.total / (asks[0]?.total * 5)) * 100)}%` }} // Rough relative depth
+                />
+
+                <div className="text-left text-red-400 font-mono relative z-10">{formatPrice(ask.price)}</div>
+                <div className="text-right text-gray-300 font-mono relative z-10">{formatQuantity(ask.quantity)}</div>
+                <div className="text-right text-gray-400 font-mono relative z-10">{formatTotal(ask.total)}</div>
               </div>
             ))}
           </div>
@@ -182,28 +188,34 @@ export function OrderBook({ coinId, coinSymbol, currentPrice }: OrderBookProps) 
 
         {/* Current Price Indicator */}
         {filter === 'all' && (
-          <div className="my-2 py-2 bg-green-900/20 border-y border-green-700/50">
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <div className="text-right text-green-400 font-semibold">
+          <div className="my-2 py-2 bg-gray-700/30 border-y border-green-700/50 sticky top-1/2 -mt-6 z-20 backdrop-blur-sm">
+            <div className="flex items-center justify-center gap-2">
+              <span className={`text-lg font-bold font-mono ${asks[0]?.price > bids[0]?.price ? 'text-green-400' : 'text-red-400'
+                }`}>
                 {formatPrice(currentPrice)}
-              </div>
-              <div className="text-center text-green-400">↑</div>
-              <div className="text-left text-green-400 text-xs">Current Price</div>
+              </span>
+              <span className="text-gray-500 text-xs">USD</span>
             </div>
           </div>
         )}
 
         {/* Bids (Buy Orders) */}
         {(filter === 'all' || filter === 'bids') && (
-          <div>
+          <div className="mt-2">
             {bids.map((bid, index) => (
               <div
                 key={`bid-${index}`}
-                className="grid grid-cols-3 gap-2 text-xs py-1 hover:bg-gray-700/50 rounded cursor-pointer"
+                className="grid grid-cols-[1fr_0.8fr_1.2fr] gap-2 text-[11px] sm:text-xs py-1 hover:bg-gray-700/50 rounded cursor-pointer transition-colors relative"
               >
-                <div className="text-right text-green-400">{formatPrice(bid.price)}</div>
-                <div className="text-right text-gray-300">{formatQuantity(bid.quantity)}</div>
-                <div className="text-right text-gray-300">{formatTotal(bid.total)}</div>
+                {/* Visual Depth Bar */}
+                <div
+                  className="absolute right-0 top-0 bottom-0 bg-green-900/10 rounded-r"
+                  style={{ width: `${Math.min(100, (bid.total / (bids[0]?.total * 5)) * 100)}%` }}
+                />
+
+                <div className="text-left text-green-400 font-mono relative z-10">{formatPrice(bid.price)}</div>
+                <div className="text-right text-gray-300 font-mono relative z-10">{formatQuantity(bid.quantity)}</div>
+                <div className="text-right text-gray-400 font-mono relative z-10">{formatTotal(bid.total)}</div>
               </div>
             ))}
           </div>

@@ -99,7 +99,7 @@ export function TradeHistory({ coinId, coinSymbol }: TradeHistoryProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="grid grid-cols-4 gap-2 text-xs text-gray-400 mb-2 pb-2 border-b border-gray-700">
+      <div className="grid grid-cols-[0.7fr_1.1fr_0.9fr_1.2fr] gap-2 text-[10px] sm:text-xs text-gray-400 mb-2 pb-2 border-b border-gray-700 pr-3">
         <div>Time</div>
         <div className="text-right">Price (USD)</div>
         <div className="text-right">Qty ({coinSymbol})</div>
@@ -107,21 +107,21 @@ export function TradeHistory({ coinId, coinSymbol }: TradeHistoryProps) {
       </div>
 
       {/* Trade List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pr-3 scrollbar-thin scrollbar-thumb-gray-700">
         {trades.length === 0 ? (
           <div className="text-center text-gray-400 py-8">No recent trades</div>
         ) : (
           trades.map((trade) => (
             <div
               key={trade.id}
-              className="grid grid-cols-4 gap-2 text-xs py-2 border-b border-gray-700/50 hover:bg-gray-700/30 rounded"
+              className="grid grid-cols-[0.7fr_1.1fr_0.9fr_1.2fr] gap-2 text-[11px] sm:text-xs py-2 border-b border-gray-700/50 hover:bg-gray-700/30 rounded transition-colors"
             >
-              <div className="text-gray-400">{formatTime(trade.timestamp)}</div>
-              <div className={`text-right font-semibold ${trade.type === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
+              <div className="text-gray-400 font-mono">{formatTime(trade.timestamp)}</div>
+              <div className={`text-right font-mono font-semibold ${trade.type === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
                 {formatPrice(trade.price)}
               </div>
-              <div className="text-right text-gray-300">{trade.quantity.toFixed(4)}</div>
-              <div className="text-right text-gray-300">
+              <div className="text-right text-gray-300 font-mono">{trade.quantity.toFixed(4)}</div>
+              <div className="text-right text-gray-300 font-mono">
                 {formatPrice(trade.total)}
               </div>
             </div>

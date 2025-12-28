@@ -106,7 +106,7 @@ export default function DashboardPage() {
 
   // Pre-compute sorted arrays and top/bottom sets for filters (memoized)
   const filterSets = useMemo(() => {
-    const validCoins = pricesList.filter(coin => 
+    const validCoins = pricesList.filter(coin =>
       coin && typeof coin.current_price === 'number' && coin.current_price >= 0.01
     );
 
@@ -131,11 +131,11 @@ export default function DashboardPage() {
   // Filter and sort coins
   const filteredAndSortedCoins = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
-    
+
     let filtered = pricesList.filter((coin) => {
       // Strictly filter out coins with 0 or invalid price, or those that would display as $0.00 (< 0.01)
       if (!coin || typeof coin.current_price !== 'number' || coin.current_price < 0.01) return false;
-      
+
       // Apply search filter first
       if (query) {
         const matchesSearch = (
@@ -247,15 +247,15 @@ export default function DashboardPage() {
   SortButton.displayName = 'SortButton';
 
   // Memoized coin row component to prevent unnecessary re-renders
-  const CoinRow = memo(({ 
-    coin, 
-    isWatched, 
-    isLoading, 
-    onRowClick, 
-    onWatchlistToggle 
-  }: { 
-    coin: CryptoPrice; 
-    isWatched: boolean; 
+  const CoinRow = memo(({
+    coin,
+    isWatched,
+    isLoading,
+    onRowClick,
+    onWatchlistToggle
+  }: {
+    coin: CryptoPrice;
+    isWatched: boolean;
     isLoading: boolean;
     onRowClick: () => void;
     onWatchlistToggle: () => void;
@@ -334,7 +334,57 @@ export default function DashboardPage() {
       ) : (
         <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden border border-gray-700">
           {/* Simple Table (Truncated for brevity in tool call but logically complete) */}
-          <div className="overflow-x-auto">
+          {/* Mobile Card View */}
+          <div className="md:hidden space-y-4">
+            {paginatedCoins.map(coin => (
+              <div
+                key={coin.id}
+                onClick={() => router.push(`/dashboard/coins/${coin.id}`)}
+                className="bg-gray-800 p-4 rounded-xl border border-gray-700 active:scale-[0.98] transition-transform"
+              >
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-900/30 flex items-center justify-center text-blue-400 font-bold border border-blue-500/20">
+                      {coin.symbol[0]}
+                    </div>
+                    <div>
+                      <h3 className="text-white font-bold">{coin.name}</h3>
+                      <span className="text-xs text-gray-400 font-mono">{coin.symbol}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-white font-mono font-medium">${coin.current_price?.toFixed(2)}</div>
+                    <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1 ${coin.price_change_percentage_24h >= 0 ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                      }`}>
+                      {coin.price_change_percentage_24h >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                      {Math.abs(coin.price_change_percentage_24h || 0).toFixed(2)}%
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center pt-3 border-t border-gray-700/50">
+                  <div className="text-xs text-gray-500">
+                    <span className="block">Vol: ${(coin.volume_24h / 1e6).toFixed(1)}M</span>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleWatchlist(coin.id, coin.symbol);
+                    }}
+                    className={`p-2 rounded-full transition-colors ${watchlistIds.has(coin.id)
+                        ? 'bg-yellow-500/10 text-yellow-500'
+                        : 'bg-gray-700 text-gray-400'
+                      }`}
+                  >
+                    <Star className={`w-4 h-4 ${watchlistIds.has(coin.id) ? 'fill-current' : ''}`} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-700">
               <thead className="bg-gray-700">
                 <tr>

@@ -168,49 +168,51 @@ export function CoinChart({ coinId, coinSymbol }: CoinChartProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Chart Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold">{coinSymbol} • USD</h2>
-          <div className="flex gap-2">
-            {timeframes.map((tf) => (
-              <button
-                key={tf.value}
-                onClick={() => setTimeframe(tf.value)}
-                className={`px-3 py-1 rounded text-sm transition-colors ${timeframe === tf.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-              >
-                {tf.label}
-              </button>
-            ))}
-          </div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+        <h2 className="text-xl font-semibold flex items-center gap-2">
+          {coinSymbol} <span className="text-gray-500">•</span> USD
+        </h2>
+
+        {/* Scrollable Timeframes on Mobile */}
+        <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0 scrollbar-hide w-full sm:w-auto">
+          {timeframes.map((tf) => (
+            <button
+              key={tf.value}
+              onClick={() => setTimeframe(tf.value)}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap ${timeframe === tf.value
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
+                }`}
+            >
+              {tf.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Current Candle Info */}
+      {/* Current Candle Info - Responsive Grid */}
       {currentCandle && (
-        <div className="grid grid-cols-5 gap-4 mb-4 p-3 bg-gray-700 rounded text-sm">
-          <div>
-            <span className="text-gray-400">O: </span>
-            <span className="text-white font-semibold">{formatPrice(currentCandle.open)}</span>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4 p-4 bg-gray-800/50 border border-gray-700 rounded-lg text-sm shadow-inner">
+          <div className="flex flex-col">
+            <span className="text-xs text-gray-500">Open</span>
+            <span className="text-white font-mono">{formatPrice(currentCandle.open)}</span>
           </div>
-          <div>
-            <span className="text-gray-400">H: </span>
-            <span className="text-green-400 font-semibold">{formatPrice(currentCandle.high)}</span>
+          <div className="flex flex-col">
+            <span className="text-xs text-gray-500">High</span>
+            <span className="text-green-400 font-mono">{formatPrice(currentCandle.high)}</span>
           </div>
-          <div>
-            <span className="text-gray-400">L: </span>
-            <span className="text-red-400 font-semibold">{formatPrice(currentCandle.low)}</span>
+          <div className="flex flex-col">
+            <span className="text-xs text-gray-500">Low</span>
+            <span className="text-red-400 font-mono">{formatPrice(currentCandle.low)}</span>
           </div>
-          <div>
-            <span className="text-gray-400">C: </span>
-            <span className="text-white font-semibold">{formatPrice(currentCandle.close)}</span>
+          <div className="flex flex-col">
+            <span className="text-xs text-gray-500">Close</span>
+            <span className="text-white font-mono">{formatPrice(currentCandle.close)}</span>
           </div>
-          <div>
-            <span className="text-gray-400">Volume: </span>
-            <span className="text-white font-semibold">
-              {new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(currentCandle.volume)}
+          <div className="flex flex-col col-span-2 sm:col-span-1 border-t sm:border-t-0 border-gray-700 pt-2 sm:pt-0 mt-2 sm:mt-0">
+            <span className="text-xs text-gray-500">Volume</span>
+            <span className="text-white font-mono">
+              {new Intl.NumberFormat('en-US', { maximumFractionDigits: 2, notation: "compact" }).format(currentCandle.volume)}
             </span>
           </div>
         </div>

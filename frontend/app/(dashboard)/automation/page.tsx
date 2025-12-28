@@ -208,29 +208,37 @@ export default function AutomationPage() {
             </div>
           </div>
 
-          <div className="pt-6 border-t border-gray-700 flex gap-4">
+          <div className="pt-6 border-t border-gray-700 flex flex-col sm:flex-row gap-4">
             <button
               type="button"
               onClick={handleStart}
               disabled={isLoading}
-              className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-[1.02] flex items-center justify-center gap-2"
+              className="group flex-1 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 disabled:opacity-50 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-900/20 border border-green-400/20 transform transition-all active:scale-[0.98] flex items-center justify-center gap-3"
             >
-              <Play className="w-5 h-5 fill-current" />
-              {isLoading ? 'STARTING...' : 'START'}
+              <div className="p-1 bg-white/20 rounded-full">
+                <Play className="w-5 h-5 fill-current" />
+              </div>
+              <span className="tracking-wide">{isLoading ? 'STARTING...' : 'START STRATEGY'}</span>
             </button>
+
             <button
               type="button"
-              className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-[1.02] flex items-center justify-center gap-2"
+              className="group flex-1 bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-white font-bold py-4 rounded-xl shadow-lg shadow-yellow-900/20 border border-yellow-400/20 transform transition-all active:scale-[0.98] flex items-center justify-center gap-3"
             >
-              <Pause className="w-5 h-5 fill-current" />
-              PAUSE
+              <div className="p-1 bg-white/20 rounded-full">
+                <Pause className="w-5 h-5 fill-current" />
+              </div>
+              <span className="tracking-wide">PAUSE</span>
             </button>
+
             <button
               type="button"
-              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-lg shadow-lg transform transition hover:scale-[1.02] flex items-center justify-center gap-2"
+              className="group flex-1 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-900/20 border border-red-400/20 transform transition-all active:scale-[0.98] flex items-center justify-center gap-3"
             >
-              <Square className="w-5 h-5 fill-current" />
-              STOP
+              <div className="p-1 bg-white/20 rounded-full">
+                <Square className="w-5 h-5 fill-current" />
+              </div>
+              <span className="tracking-wide">STOP</span>
             </button>
           </div>
         </form>
@@ -240,7 +248,64 @@ export default function AutomationPage() {
       <div className="mt-8">
         <h2 className="text-2xl font-bold text-white mb-6">Strategy History</h2>
         <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Mobile Card View */}
+          <div className="md:hidden space-y-4 p-4">
+            {history.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No strategies found.</p>
+            ) : (
+              history.map((strategy) => (
+                <div key={strategy.id} className="bg-gray-700/30 p-4 rounded-xl border border-gray-600">
+                  <div className="flex justify-between items-start mb-3">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide ${strategy.status === 'running' ? 'bg-green-900/50 text-green-400 border border-green-500/20' :
+                      strategy.status === 'completed' ? 'bg-blue-900/50 text-blue-400 border border-blue-500/20' :
+                        'bg-red-900/50 text-red-400 border border-red-500/20'
+                      }`}>
+                      {strategy.status}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(strategy.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <span className="block text-xs text-gray-500 mb-1">Invest</span>
+                      <span className="text-lg font-bold text-white">${strategy.amount}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="block text-xs text-gray-500 mb-1">Target</span>
+                      <span className="text-lg font-bold text-green-400">{strategy.profit_percentage}%</span>
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <div className="flex justify-between text-xs text-gray-400 mb-1">
+                      <span>Progress</span>
+                      <span>{strategy.iterations_completed} / {strategy.total_iterations}</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-2">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, (strategy.iterations_completed / strategy.total_iterations) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {strategy.status === 'running' && (
+                    <button
+                      onClick={() => handleStop(strategy.id)}
+                      className="w-full py-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-500/30 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Square className="w-4 h-4 fill-current" />
+                      Stop Strategy
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-gray-700/50 border-b border-gray-700">

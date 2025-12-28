@@ -367,8 +367,66 @@ export default function WatchlistPage() {
           </p>
         </div>
       ) : (
-        <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden border border-gray-700">
-          <div className="overflow-x-auto">
+        <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700">
+          {/* Mobile Card View */}
+          <div className="md:hidden space-y-4 p-4">
+            {filteredAndSortedWatchlist.map((item) => {
+              const price = prices[item.coin_id];
+              // If price is missing or invalid, skip rendering this card for now
+              if (!price || !price.current_price) return null;
+
+              const isPositive = (price.price_change_percentage_24h || 0) >= 0;
+
+              return (
+                <div
+                  key={item.id}
+                  onClick={(e) => handleRowClick(item.coin_id, e)}
+                  className="bg-gray-700/30 p-4 rounded-xl border border-gray-600 active:scale-[0.98] transition-transform"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-blue-900/20 flex items-center justify-center text-blue-400 font-bold border border-blue-500/10">
+                        {item.coin_symbol[0]}
+                      </div>
+                      <div>
+                        <h3 className="text-white font-bold">{item.coin_symbol}</h3>
+                        <span className="text-xs text-gray-400">{item.coin_id}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-white font-mono font-medium">
+                        {price ? formatPrice(price.current_price) : 'Loading...'}
+                      </div>
+                      {price && (
+                        <div className={`text-xs font-bold inline-flex items-center gap-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                          {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {(price.price_change_percentage_24h || 0).toFixed(2)}%
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-3 border-t border-gray-600/50 mt-2">
+                    <div className="text-xs text-gray-500">
+                      {price?.market_cap ? `MCap: ${formatLargeNumber(price.market_cap)}` : ''}
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFromWatchlist(item.id);
+                      }}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-900/20 text-red-400 hover:bg-red-900/30 transition-colors text-xs font-medium"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-700">
               <thead className="bg-gray-700">
                 <tr>
