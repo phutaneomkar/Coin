@@ -15,7 +15,8 @@ export async function POST(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const res = await fetch(`http://127.0.0.1:3001/api/automation/${id}/panic`, {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001';
+        const res = await fetch(`${baseUrl}/api/automation/${id}/panic`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",

@@ -21,7 +21,8 @@ export async function POST(
             }
         }
 
-        const res = await fetch(`http://127.0.0.1:3001/api/automation/${id}/stop`, {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001';
+        const res = await fetch(`${baseUrl}/api/automation/${id}/stop`, {
             method: "POST",
         });
 

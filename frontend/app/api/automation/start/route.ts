@@ -29,7 +29,8 @@ export async function POST(request: NextRequest) {
             user_id: userId
         };
 
-        const res = await fetch("http://127.0.0.1:3001/api/automation/start", {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001';
+        const res = await fetch(`${baseUrl}/api/automation/start`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
