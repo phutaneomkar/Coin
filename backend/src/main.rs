@@ -99,6 +99,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Build application
     let app = Router::new()
+        .route("/", get(health_check)) // Root route also returns OK
         .route("/health", get(health_check))
         .route(
             "/api/portfolio/calculate",

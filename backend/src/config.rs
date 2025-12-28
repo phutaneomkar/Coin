@@ -23,6 +23,7 @@ impl Config {
 
         let port = env::var("PORT")
             .unwrap_or_else(|_| "3001".to_string())
+            .trim()
             .parse::<u16>()
             .map_err(|_| anyhow::anyhow!("Invalid PORT value"))?;
 
