@@ -28,6 +28,7 @@ struct Strategy {
     current_coin_id: Option<String>,
     current_order_id: Option<Uuid>,
     entry_price: Option<Decimal>,
+    high_water_mark: Option<Decimal>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -60,11 +61,19 @@ struct BinanceTrade {
     isBestMatch: bool,
 }
 
+#[derive(Debug, Deserialize)]
+struct BinanceKline {
+    // [Open Time, Open, High, Low, Close, Volume, Close Time, ...]
+    // We only care about Close price (index 4)
+    #[serde(rename = "4")]
+    close: String,
+}
+
 #[derive(Debug, Clone)]
 struct CoinAnalysis {
     coin_id: String,
     current_price: Decimal,
-    predicted_price_10s: Decimal,
+    predicted_price_1m: Decimal,
     price_change_percent: Decimal,
     #[allow(dead_code)]
     buy_pressure: Decimal, // Total buy quantity * price
@@ -118,6 +127,15 @@ impl AutomationEngine {
             ALTER COLUMN total_amount TYPE NUMERIC
         ").execute(&self.pool).await {
             warn!("⚠️ Failed to enforce high precision on orders table: {}", e);
+        }
+
+        // Add high_water_mark for Trailing Stop
+        if let Err(e) =
+            sqlx::query("ALTER TABLE strategies ADD COLUMN IF NOT EXISTS high_water_mark NUMERIC")
+                .execute(&self.pool)
+                .await
+        {
+            warn!("⚠️ Failed to add high_water_mark column: {}", e);
         }
 
 
@@ -393,8 +411,6 @@ impl AutomationEngine {
         prices: &HashMap<String, Decimal>,
         coin_id: &str,
     ) -> anyhow::Result<()> {
-        // This should rarely happen now since we place sell order immediately after buy
-        // But keep as fallback
         let current_price = match prices.get(coin_id) {
             Some(p) => *p,
             None => return Ok(()),
@@ -405,25 +421,64 @@ impl AutomationEngine {
             return Ok(());
         }
 
-        let multiplier = Decimal::ONE + (strategy.profit_percentage / Decimal::from(100));
-        let target_price = entry_price * multiplier;
+        // --- TRAILING STOP LOGIC ---
+        let mut high_water_mark = strategy.high_water_mark.unwrap_or(entry_price);
+        
+        // Update High Water Mark if current price is higher
+        if current_price > high_water_mark {
+            high_water_mark = current_price;
+            // Update in DB
+             sqlx::query("UPDATE strategies SET high_water_mark = $2 WHERE id = $1")
+                .bind(strategy.id)
+                .bind(high_water_mark)
+                .execute(&self.pool)
+                .await?;
+        }
 
-        info!("CALC_DEBUG (Active): Strategy {} Entry: {}, Profit%: {}, Target: {}, Current: {}", 
-            strategy.id, entry_price, strategy.profit_percentage, target_price, current_price);
+        let profit_pct = (current_price - entry_price) / entry_price * Decimal::from(100);
+        let target_pct = strategy.profit_percentage;
+        
+        // Stop Loss Threshold: 1% below High Water Mark
+        // BUT only activate trailing stop if we are in profit? Or always?
+        // Let's say: If we are in profit > 0.5%, trail by 0.5%.
+        // If we are loss, use fixed stop loss of -2%. (Hardcoded for safety)
+        
+        let stop_price = if profit_pct > Decimal::from_parts(5, 0, 0, false, 1) { // > 0.5% profit
+             high_water_mark * Decimal::from_str("0.995").unwrap() // Trail by 0.5%
+        } else {
+             entry_price * Decimal::from_str("0.98").unwrap() // Fixed Hard Stop at -2%
+        };
 
+        let target_price = entry_price * (Decimal::ONE + (target_pct / Decimal::from(100)));
 
-        if current_price >= target_price {
+        info!("🛡️ Strategy {} Monitoring: {} @ {} (Entry: {}, High: {}, Stop: {}, Target: {})", 
+            strategy.id, coin_id, current_price, entry_price, high_water_mark, stop_price, target_price);
+
+        let mut should_sell = false;
+        let mut sell_reason = "";
+
+        if current_price <= stop_price {
+            should_sell = true;
+            sell_reason = "Trailing Stop / Stop Loss Hit";
+        } else if current_price >= target_price {
+            should_sell = true;
+            sell_reason = "Profit Target Hit";
+        }
+
+        if should_sell {
             info!(
-                "🤖 Strategy {}: Target Hit! Selling {} @ {} (Entry: {})",
-                strategy.id, coin_id, current_price, entry_price
+                "🚨 Strategy {}: Selling {} @ {} ({})",
+                strategy.id, coin_id, current_price, sell_reason
             );
 
-            let quantity = strategy.amount / entry_price;
+            let quantity = strategy.amount / entry_price; // Approx quantity
+            // Fetch actual available balance/quantity? Strategy assumes full amount used.
+            
             let order_id = Uuid::new_v4();
             let total_amount = current_price * quantity;
 
             sqlx::query(
-                "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'limit', $5, $6, $7, 'pending')"
+                "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'market', $5, $6, $7, 'completed')"
             )
             .bind(order_id)
             .bind(strategy.user_id)
@@ -434,21 +489,31 @@ impl AutomationEngine {
             .bind(total_amount)
             .execute(&self.pool).await?;
 
-            self.matching_engine
-                .add_order(
-                    order_id.to_string(),
-                    coin_id.to_string(),
-                    "sell".to_string(),
-                    current_price,
-                    quantity,
-                )
-                .await;
+            // Log the sell action
+            let profit = total_amount - strategy.amount;
+            self.log_action(
+                strategy.id,
+                "sell",
+                coin_id,
+                current_price,
+                total_amount,
+                Some(profit),
+            )
+            .await?;
 
-            sqlx::query("UPDATE strategies SET current_order_id = $2 WHERE id = $1")
-                .bind(strategy.id)
-                .bind(order_id)
-                .execute(&self.pool)
-                .await?;
+            // Update user balance/holdings via execution service
+            if let Err(e) = execute_order(&self.pool, order_id, current_price).await {
+                error!("❌ Failed to execute automation sell order {}: {}", order_id, e);
+            }
+
+            // Reset Strategy
+             sqlx::query(
+                "UPDATE strategies SET current_coin_id = NULL, current_order_id = NULL, entry_price = NULL, high_water_mark = NULL, iterations_completed = iterations_completed + 1 WHERE id = $1"
+            )
+            .bind(strategy.id)
+            .execute(&self.pool).await?;
+
+            info!("✅ Strategy {} Iteration Completed. Profit: {}", strategy.id, profit);
         }
 
         Ok(())
@@ -482,11 +547,19 @@ impl AutomationEngine {
             return Ok(());
         }
 
+        // Fetch BTC Trend (Global Filter)
+        let btc_trend = self.get_btc_trend().await.unwrap_or(Decimal::ZERO);
+        if btc_trend < Decimal::from_str("-0.01").unwrap() {
+            // Market Dump Warning! Abort/Cautious
+            warn!("⚠️ Global Market Dump Detected (BTC Down). Pausing entries.");
+            return Ok(());
+        }
+
         // Parallel Analysis with Concurrency Limit (10 concurrent requests)
         let analyses = stream::iter(filtered_coins)
             .map(|(coin_id, ticker_data)| {
                 let self_ref = &self;
-                async move { self_ref.analyze_coin(&coin_id, ticker_data.price, ticker_data.open_price).await }
+                async move { self_ref.analyze_coin(&coin_id, ticker_data.price, ticker_data.open_price, btc_trend).await }
             })
             .buffer_unordered(10) // Limit concurrency to avoid IP bans
             .filter_map(|res| async { res.ok() })
@@ -510,7 +583,7 @@ impl AutomationEngine {
 
         if let Some(best) = best_coin {
             info!("🎯 Strategy {}: Best opportunity found! {} predicted to increase {}% (Current: {}, Predicted: {})", 
-                strategy.id, best.coin_id, best.price_change_percent, best.current_price, best.predicted_price_10s);
+                strategy.id, best.coin_id, best.price_change_percent, best.current_price, best.predicted_price_1m);
 
             // ⚡ RACE CONDITION FIX: Re-check if strategy is still running before executing BUY
             let is_running = sqlx::query_scalar::<_, bool>(
@@ -624,63 +697,112 @@ impl AutomationEngine {
         coin_id: &str,
         current_price: Decimal,
         open_price: Decimal,
+        btc_trend_score: Decimal, // Passed from handle_entry
     ) -> anyhow::Result<CoinAnalysis> {
         // Fetch order book data
         let order_book = self.fetch_order_book(coin_id).await?;
         
-        // Fetch recent trades (Allow failure, just warn)
+        // Fetch recent trades
         let trades = match self.fetch_recent_trades(coin_id).await {
             Ok(t) => t,
             Err(e) => {
                 warn!("⚠️ Failed to fetch trades for {}: {}", coin_id, e);
-                Vec::new() // Fallback to empty
+                Vec::new()
             }
         };
 
-        // Calculate buy and sell pressure from ORDER BOOK
-        let buy_pressure: Decimal = order_book
-            .bids
-            .iter()
-            .take(10) // Top 10 buy orders
-            .map(|bid| {
-                let price: Decimal = bid[0].parse().unwrap_or(Decimal::ZERO);
-                let qty: Decimal = bid[1].parse().unwrap_or(Decimal::ZERO);
-                price * qty
-            })
-            .sum();
+        // --- NEW: K-Line & RSI Analysis ---
+        let klines = self.fetch_klines(coin_id, 30).await.unwrap_or_default();
+        let rsi = Self::calculate_rsi(&klines, 14);
+        
+        // Filter: Don't buy if RSI > 70 (Overbought)
+        // Boost: Buy if RSI < 30 (Oversold Bounce candidate)
+        let rsi_bias = if rsi > Decimal::from(70) {
+            Decimal::from_str("-0.02").unwrap() // -2% penalty
+        } else if rsi < Decimal::from(30) {
+             Decimal::from_str("0.02").unwrap() // +2% boost (Bounce)
+        } else {
+             Decimal::ZERO
+        };
 
-        let sell_pressure: Decimal = order_book
-            .asks
-            .iter()
-            .take(10) // Top 10 sell orders
-            .map(|ask| {
-                let price: Decimal = ask[0].parse().unwrap_or(Decimal::ZERO);
-                let qty: Decimal = ask[1].parse().unwrap_or(Decimal::ZERO);
-                price * qty
-            })
-            .sum();
 
-        // Calculate pressure from TRADE HISTORY
-        let mut trade_buy_vol = Decimal::ZERO;
-        let mut trade_sell_vol = Decimal::ZERO;
+        // --- NEW: VWAP Analysis ---
+        let mut total_vol = Decimal::ZERO;
+        let mut vol_price_sum = Decimal::ZERO;
+        for t in &trades {
+             let p: Decimal = t.price.parse().unwrap_or_default();
+             let q: Decimal = t.qty.parse().unwrap_or_default();
+             total_vol += q;
+             vol_price_sum += p * q;
+        }
+        let vwap = if total_vol > Decimal::ZERO { vol_price_sum / total_vol } else { current_price };
+        
+        // If Price < VWAP, it might be undervalued (Good entry)
+        // If Price > VWAP, it might be overextended, OR strong momentum.
+        // Context matters. Let's assume Price < VWAP is a discount.
+        let vwap_bias = if current_price < vwap {
+             Decimal::from_str("0.005").unwrap() // 0.5% boost
+        } else {
+             Decimal::from_str("-0.005").unwrap() // 0.5% penalty
+        };
+
+
+        // Calculate buy and sell pressure from ORDER BOOK (Wall Detection)
+        let mut buy_pressure = Decimal::ZERO;
+        let mut sell_pressure = Decimal::ZERO;
+        let mut resistance_wall_detected = false;
+        
+        // Identify Walls (Liquidity > 5x average)
+        let mut total_ask_qty = Decimal::ZERO;
+        for ask in order_book.asks.iter().take(20) {
+             let qty: Decimal = ask[1].parse().unwrap_or_default();
+             total_ask_qty += qty;
+        }
+        let avg_ask_qty = total_ask_qty / Decimal::from(20);
+
+        for ask in order_book.asks.iter().take(10) {
+            let price: Decimal = ask[0].parse().unwrap_or_default();
+            let qty: Decimal = ask[1].parse().unwrap_or_default();
+            
+            // Check for Wall
+            if qty > avg_ask_qty * Decimal::from(5) {
+                // Large Sell Wall near current price? Bad.
+                resistance_wall_detected = true;
+            }
+            sell_pressure += price * qty;
+        }
+        
+        let wall_bias = if resistance_wall_detected {
+             Decimal::from_str("-0.05").unwrap() // -5% penalty (Huge!)
+        } else {
+             Decimal::ZERO
+        };
+
+        for bid in order_book.bids.iter().take(10) {
+            let price: Decimal = bid[0].parse().unwrap_or_default();
+            let qty: Decimal = bid[1].parse().unwrap_or_default();
+            buy_pressure += price * qty;
+        }
+
+        // --- OLD LOGIC with Integration ---
+        
         let mut min_price = Decimal::MAX;
         let mut max_price = Decimal::ZERO;
         let mut sum_price = Decimal::ZERO;
         let mut trade_count = 0;
+        let mut trade_buy_vol = Decimal::ZERO;
+        let mut trade_sell_vol = Decimal::ZERO;
 
         for trade in &trades {
             let qty: Decimal = trade.qty.parse().unwrap_or(Decimal::ZERO);
             let price: Decimal = trade.price.parse().unwrap_or(Decimal::ZERO);
             let vol = price * qty;
             
-            // Track Price Stats for Volatility
             if price < min_price { min_price = price; }
             if price > max_price { max_price = price; }
             sum_price += price;
             trade_count += 1;
 
-            // isBuyerMaker = true -> Maker is BUYER -> Taker is SELLER -> SOLD side
-            // isBuyerMaker = false -> Maker is SELLER -> Taker is BUYER -> BOUGHT side
             if trade.isBuyerMaker {
                 trade_sell_vol += vol;
             } else {
@@ -688,84 +810,71 @@ impl AutomationEngine {
             }
         }
         
-        // 🛡️ VOLATILITY FILTER: If price hasn't moved in last 50 trades, it's a dead coin.
         let volatility_pct = if max_price > Decimal::ZERO && min_price < Decimal::MAX {
              (max_price - min_price) / min_price
         } else {
              Decimal::ZERO
         };
 
-        // 🛡️ VELOCITY CHECK: Is the latest price higher than the average price?
         let avg_price = if trade_count > 0 { sum_price / Decimal::from(trade_count) } else { current_price };
         let velocity_bias = if current_price > avg_price {
-             // Uptrending in short term
-             Decimal::from_parts(1, 0, 0, false, 2) // +0.01 (1% bonus)
+             Decimal::from_parts(1, 0, 0, false, 2)
         } else {
-             // Downtrending or flat
-             Decimal::from_parts(1, 0, 0, true, 2) // -0.01 (1% penalty)
+             Decimal::from_parts(1, 0, 0, true, 2)
         };
 
-        // Advanced calculation: Predict 10-second price
         let total_pressure = buy_pressure + sell_pressure;
         let ob_momentum = if total_pressure > Decimal::ZERO {
             (buy_pressure - sell_pressure) / total_pressure
         } else {
-            Decimal::ZERO
+             Decimal::ZERO
         };
 
         let total_trade_vol = trade_buy_vol + trade_sell_vol;
         let trade_momentum = if total_trade_vol > Decimal::ZERO {
             (trade_buy_vol - trade_sell_vol) / total_trade_vol
         } else {
-            Decimal::ZERO
+             Decimal::ZERO
         };
 
-        // NEW: Incorporate 24h Trend
         let trend_24h = if open_price > Decimal::ZERO {
              (current_price - open_price) / open_price
         } else {
              Decimal::ZERO
         };
 
-        // Prediction Formula Weights:
-        // OrderBook Momentum: 0.01 (1% max impact)
-        // Trend (24h): 0.50 (50% impact - HIGH - We want to follow the main trend)
-        // Trade Flow: 0.10 (10% max impact)
-        // Velocity (Short Term): Added as direct bias
-        // Volatility Scaler: If volatility is 0, momentum means nothing.
-        
-        let ob_factor = Decimal::from_parts(1, 0, 0, false, 2); // 0.01
-        let trend_factor = Decimal::from_parts(5, 0, 0, false, 1); // 0.50 
-        let trade_factor = Decimal::from_parts(1, 0, 0, false, 1); // 0.10
+        // Weights
+        let ob_factor = Decimal::from_parts(1, 0, 0, false, 2); 
+        let trend_factor = Decimal::from_parts(5, 0, 0, false, 1); 
+        let trade_factor = Decimal::from_parts(1, 0, 0, false, 1); 
 
         let base_momentum = (ob_momentum * ob_factor) + (trend_24h * trend_factor) + (trade_momentum * trade_factor);
         
-        // Final Prediction: Base + Velocity, SCALED by Volatility
-        // Logic: If Volatility is 0, bias becomes 0 -> Prediction = current_price (No Buy).
-        // If Volatility is high (e.g. 2%), and Momentum is high, Prediction spikes.
-        let volatility_scaler = if volatility_pct > Decimal::ZERO { volatility_pct * Decimal::from(10) } else { Decimal::ZERO }; // Amplify volatility impact
+        let volatility_scaler = if volatility_pct > Decimal::ZERO { volatility_pct * Decimal::from(10) } else { Decimal::ZERO }; 
         
-        let combined_bias = (base_momentum + velocity_bias) * volatility_scaler;
+        let combined_bias = (base_momentum + velocity_bias + rsi_bias + vwap_bias + wall_bias + btc_trend_score) * volatility_scaler;
         
-        let predicted_price_10s = current_price * (Decimal::ONE + combined_bias);
+        let time_scaler = Decimal::from(6); 
+        let predicted_bias = combined_bias * time_scaler;
 
-        let price_change = predicted_price_10s - current_price;
+        let predicted_price_1m = current_price * (Decimal::ONE + predicted_bias);
+
+        let price_change = predicted_price_1m - current_price;
         let price_change_percent = if current_price > Decimal::ZERO {
             (price_change / current_price) * Decimal::from(100)
         } else {
             Decimal::ZERO
         };
         
-        // Log deep analysis for top opportunities
         if price_change_percent > Decimal::from(1) {
-            info!("🔬 Analysis {}: OB_Mom: {}, Trade_Mom: {}, Trend24h: {}, Pred% : {}", 
-                coin_id, ob_momentum, trade_momentum, trend_24h, price_change_percent);
+            info!("🔬 Analysis {}: RSI: {}, BTC_Bias: {}, Wall_Bias: {}, Total%: {}", 
+                coin_id, rsi, btc_trend_score, wall_bias, price_change_percent);
         }
 
         Ok(CoinAnalysis {
             coin_id: coin_id.to_string(),
             current_price,
-            predicted_price_10s,
+            predicted_price_1m,
             price_change_percent,
             buy_pressure,
             sell_pressure,
@@ -810,6 +919,88 @@ impl AutomationEngine {
 
         let trades: Vec<BinanceTrade> = response.json().await?;
         Ok(trades)
+    }
+
+    async fn fetch_klines(&self, coin_id: &str, limit: usize) -> anyhow::Result<Vec<Decimal>> {
+        let symbol = format!("{}USDT", coin_id.to_uppercase());
+        // Fetch 1m candles
+        let url = format!(
+            "https://api.binance.com/api/v3/klines?symbol={}&interval=1m&limit={}",
+            symbol, limit
+        );
+
+        let response = self.http_client.get(&url).send().await?;
+        
+        if !response.status().is_success() {
+             return Ok(Vec::new()); // Fail gracefully
+        }
+
+        // Binance returns array of arrays. We need to parse custom logic or use generic Value
+        let raw_klines: Vec<serde_json::Value> = response.json().await?;
+        
+        let closes: Vec<Decimal> = raw_klines.iter().filter_map(|k| {
+            // Index 4 is Close Price
+            k.get(4).and_then(|v| v.as_str()).and_then(|s| s.parse::<Decimal>().ok())
+        }).collect();
+
+        Ok(closes)
+    }
+
+    fn calculate_rsi(prices: &[Decimal], period: usize) -> Decimal {
+        if prices.len() <= period {
+            return Decimal::from(50); // Not enough data, return neutral
+        }
+
+        let mut gains = Decimal::ZERO;
+        let mut losses = Decimal::ZERO;
+
+        // Calculate initial Average Gain/Loss
+        for i in 1..=period {
+            let change = prices[i] - prices[i-1];
+            if change > Decimal::ZERO {
+                gains += change;
+            } else {
+                losses += change.abs();
+            }
+        }
+
+        let mut avg_gain = gains / Decimal::from(period);
+        let mut avg_loss = losses / Decimal::from(period);
+
+        // Calculate smoothed averages for remainder
+        for i in (period + 1)..prices.len() {
+             let change = prices[i] - prices[i-1];
+             let (gain, loss) = if change > Decimal::ZERO {
+                 (change, Decimal::ZERO)
+             } else {
+                 (Decimal::ZERO, change.abs())
+             };
+             
+             avg_gain = (avg_gain * Decimal::from(period - 1) + gain) / Decimal::from(period);
+             avg_loss = (avg_loss * Decimal::from(period - 1) + loss) / Decimal::from(period);
+        }
+
+        if avg_loss == Decimal::ZERO {
+            return Decimal::from(100);
+        }
+
+        let rs = avg_gain / avg_loss;
+        let rsi = Decimal::from(100) - (Decimal::from(100) / (Decimal::ONE + rs));
+        
+        rsi
+    }
+
+    async fn get_btc_trend(&self) -> anyhow::Result<Decimal> {
+         let klines = self.fetch_klines("BTC", 5).await?;
+         if klines.len() < 5 {
+             return Ok(Decimal::ZERO);
+         }
+         
+         let current = klines.last().unwrap();
+         let start = klines.first().unwrap();
+         
+         let trend = (current - start) / start;
+         Ok(trend)
     }
 
     async fn log_action(
