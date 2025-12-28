@@ -639,49 +639,19 @@ impl AutomationEngine {
                 // Continue anyway, but log potential consistency issue
             }
 
-            // Immediately place limit sell order
-            let multiplier = Decimal::ONE + (strategy.profit_percentage / Decimal::from(100));
-            let target_price = best.current_price * multiplier;
-            let sell_order_id = Uuid::new_v4();
-            let total_amount = target_price * quantity;
-
+            // --- TRAILING STOP SETUP (Active Monitoring) ---
+            // Update strategy to track this active trade with NULL order_id (No fixed sell order)
+            // Initialize High Water Mark = Entry Price
+            
             sqlx::query(
-                "INSERT INTO orders (id, user_id, coin_id, coin_symbol, order_type, order_mode, quantity, price_per_unit, total_amount, order_status) VALUES ($1, $2, $3, $4, 'sell', 'limit', $5, $6, $7, 'pending')"
-            )
-            .bind(sell_order_id)
-            .bind(strategy.user_id)
-            .bind(&best.coin_id)
-            .bind(best.coin_id.to_uppercase())
-            .bind(quantity)
-            .bind(target_price)
-            .bind(total_amount)
-            .execute(&self.pool).await?;
-
-            // Add to matching engine
-            self.matching_engine
-                .add_order(
-                    sell_order_id.to_string(),
-                    best.coin_id.clone(),
-                    "sell".to_string(),
-                    target_price,
-                    quantity,
-                )
-                .await;
-
-            // Update Strategy
-            sqlx::query(
-                "UPDATE strategies SET current_coin_id = $2, current_order_id = $3, entry_price = $4 WHERE id = $1"
+                "UPDATE strategies SET current_coin_id = $2, current_order_id = NULL, entry_price = $3, high_water_mark = $3 WHERE id = $1"
             )
             .bind(strategy.id)
             .bind(&best.coin_id)
-            .bind(sell_order_id)
             .bind(best.current_price)
             .execute(&self.pool).await?;
 
-            info!(
-                "✅ Strategy {}: Market buy completed, limit sell placed @ {} ({}% target)",
-                strategy.id, target_price, strategy.profit_percentage
-            );
+            info!("✅ Strategy {} Entered Active Monitoring for {} @ {}", strategy.id, best.coin_id, best.current_price);
         } else {
             // No coin meets threshold, wait for next cycle
             info!(

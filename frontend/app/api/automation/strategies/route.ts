@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(data, { status: res.status });
     } catch (error: any) {
-        console.error("Proxy Error:", error);
-        return NextResponse.json({ message: error.message }, { status: 500 });
+        console.error("Proxy Error connecting to Backend:", error);
+        console.error("Target URL was:", process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001');
+        return NextResponse.json({ message: error.message, stack: error.stack }, { status: 500 });
     }
 }
