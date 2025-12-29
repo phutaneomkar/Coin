@@ -603,22 +603,26 @@ impl AutomationEngine {
                  // PRE-FILTER 1: Liquidity Check (> 1M USDT 24h Volume)
                  if data.volume_quote < Decimal::from(1_000_000) { return false; }
 
-                 // PRE-FILTER 2: Momentum Check (RELAXED)
-                 // We want coins that are MOVING, but also allow oversold coins (negative momentum)
-                 // Oversold coins (down 1-5%) are good entry opportunities
+                 // PRE-FILTER 2: Momentum Check (FIXED - Favor Oversold)
+                 // We want coins that are OVERSOLD (down), not overbought (up)
+                 // Oversold coins (down 1-8%) are good entry opportunities
                  let open = data.open_price;
                  let close = data.price;
                  if open <= Decimal::ZERO { return false; }
                  
                  let change_pct = (close - open) / open * Decimal::from(100);
-                 // Allow coins that are:
-                 // - Moving up (> 1%) - momentum
-                 // - Moving down moderately (-1% to -5%) - oversold opportunity
-                 // - Reject only sideways coins (< 1% change) or extreme dumps (< -5%)
+                 // CRITICAL FIX: Only allow coins that are DOWN (oversold), not UP (overbought)
+                 // - Moving down moderately (-1% to -8%) - oversold opportunity (GOOD)
+                 // - Reject coins moving up (> 0%) - they're already high (BAD)
+                 // - Reject sideways coins (< 1% change) - no opportunity
+                 // - Reject extreme dumps (< -8%) - might be crashing
+                 if change_pct > Decimal::ZERO {
+                      return false; // REJECT coins going UP - they're already high!
+                 }
                  if change_pct.abs() < Decimal::from(1) {
                       return false; // Skip boring side-ways coins
                  }
-                 if change_pct < Decimal::from_str("-5").unwrap() {
+                 if change_pct < Decimal::from_str("-8").unwrap() {
                       return false; // Skip extreme dumps (might be crashing)
                  }
                  
@@ -675,6 +679,11 @@ impl AutomationEngine {
                 if a.rsi > Decimal::from(70) {
                     return false; // Hard reject overbought
                 }
+                // CRITICAL: Only buy if price is BELOW or NEAR support level (oversold/undervalued)
+                // If current price is ABOVE support, it's not a good entry (would buy high)
+                if a.support_level > Decimal::ZERO && a.current_price > a.support_level * Decimal::from_str("1.01").unwrap() {
+                    return false; // Price is more than 1% above support - not oversold enough, would buy high
+                }
                 // Require minimum entry score (multi-indicator confirmation)
                 if a.entry_score < Decimal::from_str("0.7").unwrap() {
                     return false; // Not enough confirmation
@@ -684,16 +693,41 @@ impl AutomationEngine {
                     return false; // Weak volume = weak signal
                 }
                 // Look for coins with positive potential (not predicted to crash)
-                a.price_change_percent > Decimal::from_str("-5").unwrap()
+                if a.price_change_percent < Decimal::from_str("-5").unwrap() {
+                    return false; // Predicted to crash
+                }
+                // CRITICAL: Only buy if current price is BELOW predicted price (undervalued)
+                // This ensures we buy LOW, not HIGH
+                // If current_price >= predicted_price, we'd be buying at or above fair value (bad)
+                a.current_price < a.predicted_price_10m
             })
             .max_by(|a, b| {
-                // Prioritize by entry_score first (highest confidence)
-                let score_comparison = a.entry_score.cmp(&b.entry_score);
-                if score_comparison != std::cmp::Ordering::Equal {
-                    score_comparison
+                // Prioritize by:
+                // 1. Lower RSI (more oversold = better entry) - MOST IMPORTANT
+                // 2. Price closer to support (more undervalued)
+                // 3. Entry score (confidence)
+                let rsi_comparison = b.rsi.cmp(&a.rsi); // Lower RSI is better (reversed)
+                if rsi_comparison != std::cmp::Ordering::Equal {
+                    rsi_comparison
                 } else {
-                    // Then by lower RSI (more oversold = better entry)
-                    b.rsi.cmp(&a.rsi)
+                    // Then by distance to support (closer to support = better entry)
+                    let a_support_dist = if a.support_level > Decimal::ZERO {
+                        ((a.current_price - a.support_level) / a.support_level).abs()
+                    } else {
+                        Decimal::MAX
+                    };
+                    let b_support_dist = if b.support_level > Decimal::ZERO {
+                        ((b.current_price - b.support_level) / b.support_level).abs()
+                    } else {
+                        Decimal::MAX
+                    };
+                    let support_comparison = a_support_dist.cmp(&b_support_dist); // Closer to support is better
+                    if support_comparison != std::cmp::Ordering::Equal {
+                        support_comparison
+                    } else {
+                        // Finally by entry score
+                        a.entry_score.cmp(&b.entry_score)
+                    }
                 }
             });
 
@@ -952,6 +986,15 @@ impl AutomationEngine {
         } else {
              Decimal::ZERO
         };
+        
+        // CRITICAL FIX: Reverse trend bias - favor NEGATIVE trends (oversold), penalize positive (overbought)
+        // If trend is positive (coin going up), it's already high - STRONG PENALTY
+        // If trend is negative (coin going down), it's oversold - STRONG BOOST
+        let trend_bias = if trend_24h > Decimal::ZERO {
+            trend_24h * Decimal::from_str("-1.0").unwrap() // Strong negative bias for uptrends (coin is high - don't buy!)
+        } else {
+            trend_24h.abs() * Decimal::from_str("1.0").unwrap() // Strong positive bias for downtrends (coin is low - buy!)
+        };
 
         // Weights (Tuned for 10m Horizon)
         // Order Book noise is less relevant for 10m, Trend is more important
@@ -959,7 +1002,8 @@ impl AutomationEngine {
         let trend_factor = Decimal::from_parts(6, 0, 0, false, 1); // 0.6 (Increased from 0.5)
         let trade_factor = Decimal::from_parts(1, 0, 0, false, 1); // 0.1
 
-        let base_momentum = (ob_momentum * ob_factor) + (trend_24h * trend_factor) + (trade_momentum * trade_factor);
+        // Use trend_bias instead of trend_24h directly (reversed logic)
+        let base_momentum = (ob_momentum * ob_factor) + (trend_bias * trend_factor) + (trade_momentum * trade_factor);
         
         let volatility_scaler = if volatility_pct > Decimal::ZERO { volatility_pct * Decimal::from(10) } else { Decimal::ZERO }; 
         
