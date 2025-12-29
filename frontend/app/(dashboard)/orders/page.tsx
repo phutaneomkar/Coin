@@ -246,21 +246,57 @@ function OrdersContent() {
         coinId => !priceMap[coinId.toLowerCase()] && !priceMap[coinId]
       );
 
-      for (const coinId of missingCoins) {
+      // Fetch missing prices with better error handling and timeout
+      const fetchPromises = missingCoins.map(async (coinId) => {
         try {
-          const response = await fetch(
-            `/api/crypto/coin-detail?coinId=${encodeURIComponent(coinId)}`
-          );
-          if (response.ok) {
+          // Create abort controller for timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+          
+          try {
+            const response = await fetch(
+              `/api/crypto/coin-detail?coinId=${encodeURIComponent(coinId)}`,
+              {
+                method: 'GET',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                signal: controller.signal,
+              }
+            );
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+              // Don't log 404s as errors (coin might not exist)
+              if (response.status !== 404) {
+                console.warn(`Failed to fetch price for ${coinId}: HTTP ${response.status}`);
+              }
+              return;
+            }
+            
             const coinDetail = await response.json();
-            const normalizedId = coinId.toLowerCase();
-            priceMap[normalizedId] = coinDetail.current_price || 0;
-            priceMap[coinId] = coinDetail.current_price || 0; // Also store with original case
+            if (coinDetail && typeof coinDetail.current_price === 'number') {
+              const normalizedId = coinId.toLowerCase();
+              priceMap[normalizedId] = coinDetail.current_price;
+              priceMap[coinId] = coinDetail.current_price; // Also store with original case
+            }
+          } catch (fetchError: any) {
+            clearTimeout(timeoutId);
+            // Only log non-abort errors (timeouts are expected for invalid coins)
+            if (fetchError.name !== 'AbortError' && fetchError.name !== 'TimeoutError') {
+              console.error(`Failed to fetch price for ${coinId}:`, fetchError);
+            }
+            // Silently continue - don't break the whole function
           }
-        } catch (error) {
-          console.error(`Failed to fetch price for ${coinId}:`, error);
+        } catch (error: any) {
+          // Catch any other errors
+          console.error(`Error processing price fetch for ${coinId}:`, error);
         }
-      }
+      });
+      
+      // Wait for all fetches to complete (or fail)
+      await Promise.allSettled(fetchPromises);
 
       setCurrentPrices(priceMap);
     };
