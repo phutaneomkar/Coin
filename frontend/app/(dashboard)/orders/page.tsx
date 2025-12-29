@@ -274,32 +274,20 @@ function OrdersContent() {
   // Calculate portfolio data - ONLY use holdings table data (no fallback to orders)
   // This ensures that cleaned-up holdings don't reappear from old orders
   const portfolioData = useMemo(() => {
-    const timestamp = new Date().toISOString();
-    console.log('Portfolio: Calculating portfolio data', {
-      holdingsDataCount: Object.keys(holdingsData).length,
-      ordersCount: orders.length,
-      currentPricesCount: Object.keys(currentPrices).length,
-      holdingsDataKeys: Object.keys(holdingsData),
-      timestamp
-    });
-
     const portfolioDataMap = new Map<string, any>();
 
     // ONLY use holdings table data - no fallback to orders
     // If holdings table is empty, portfolio should be empty (not recalculated from orders)
     if (Object.keys(holdingsData).length > 0) {
-      console.log('Portfolio: Using holdings table data', { holdingsData, timestamp });
       Object.entries(holdingsData).forEach(([coinId, holding]) => {
         // Skip holdings with 0 or negative quantity (shouldn't happen, but safety check)
         if (holding.quantity <= 0) {
-          console.warn('Portfolio: Skipping holding with 0 or negative quantity', { coinId, quantity: holding.quantity, timestamp });
           return;
         }
 
         // Additional validation: ensure quantity is a valid positive number
         const qty = parseFloat(holding.quantity.toString());
         if (isNaN(qty) || qty <= 0) {
-          console.warn('Portfolio: Invalid quantity detected, skipping', { coinId, quantity: holding.quantity, parsed: qty, timestamp });
           return;
         }
 
@@ -357,13 +345,6 @@ function OrdersContent() {
           profitLossPercent: orderValue > 0 ? (((validatedQuantity * currentPrice) - (validatedQuantity * orderPrice)) / (validatedQuantity * orderPrice)) * 100 : 0,
         };
 
-        console.log('Portfolio: Adding holding to portfolio', {
-          coinId,
-          originalQuantity: holding.quantity,
-          pendingSellQty,
-          availableQty
-        });
-
         // Group by Symbol to merge duplicates (e.g., 'bitcoin' and 'btc')
         const symbolKey = coinSymbol.toUpperCase();
 
@@ -392,16 +373,10 @@ function OrdersContent() {
           // For now, keep the ID that was encountered first usually creates a stable list.
           // But if we want to sell the one with actual balance, we might need logic.
           // Let's stick to the first one for simplicity unless we see issues.
-
-          console.log(`Portfolio: Merged duplicate for ${symbolKey}`, existing);
         } else {
           portfolioDataMap.set(symbolKey, portfolioItem);
         }
       });
-    } else {
-      // No holdings data - portfolio is empty (do NOT fallback to orders)
-      // This ensures cleaned-up holdings don't reappear
-      console.log('Portfolio: No holdings data - portfolio is empty (not using orders fallback)');
     }
 
     // Convert map to array and filter out any invalid entries
@@ -409,18 +384,11 @@ function OrdersContent() {
       // Double-check: remove any items with 0 or negative quantity
       // BUT keep them if they have locked quantity (so total value is correct)
       if (item.quantity <= 0 && item.lockedQuantity <= 0) {
-        console.warn('Portfolio: Filtering out item with invalid quantity', item);
         return false;
       }
       return true;
     });
 
-    console.log('Portfolio: Final portfolio data', {
-      count: portfolioArray.length,
-      items: portfolioArray,
-      coinIds: portfolioArray.map(i => i.coin_id),
-      timestamp: new Date().toISOString()
-    });
     return portfolioArray;
   }, [holdingsData, currentPrices, orders]);
 
