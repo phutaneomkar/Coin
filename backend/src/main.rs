@@ -1,7 +1,9 @@
 use axum::{
+    extract::State,
     http::Method,
+    http::StatusCode,
     routing::{get, post},
-    Router,
+    Json, Router,
 };
 use tower_http::cors::{Any, CorsLayer};
 
@@ -118,6 +120,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/", get(health_check)) // Root route also returns OK
         .route("/health", get(health_check))
+        .route("/health/db", get(health_check_db)) // Database health check
         .route(
             "/api/portfolio/calculate",
             post(handlers::portfolio::calculate_portfolio),
@@ -198,4 +201,48 @@ fn redact_database_url(database_url: &str) -> String {
 
 async fn health_check() -> &'static str {
     "OK"
+}
+
+async fn health_check_db(State(state): State<AppState>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    use serde_json::json;
+    
+    // Test database connection with a simple query
+    match sqlx::query("SELECT 1 as test")
+        .fetch_one(&state.pool)
+        .await
+    {
+        Ok(_) => {
+            // Test strategies table exists and is accessible
+            match sqlx::query("SELECT COUNT(*) as count FROM strategies")
+                .fetch_one(&state.pool)
+                .await
+            {
+                Ok(row) => {
+                    let count: i64 = row.get("count");
+                    Ok(Json(json!({
+                        "status": "healthy",
+                        "database": "connected",
+                        "strategies_table": "accessible",
+                        "strategies_count": count,
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    })))
+                }
+                Err(e) => {
+                    Ok(Json(json!({
+                        "status": "degraded",
+                        "database": "connected",
+                        "strategies_table": "error",
+                        "error": format!("{}", e),
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    })))
+                }
+            }
+        }
+        Err(e) => {
+            Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("Database connection failed: {}", e)
+            ))
+        }
+    }
 }

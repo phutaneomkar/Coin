@@ -5,8 +5,20 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
     try {
         // Ideally we should filter by user here in the future
-        // Priority: BACKEND_URL > NEXT_PUBLIC_API_URL > default localhost:3001
-        const baseUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:3001';
+        // Smart URL resolution: In development, prefer NEXT_PUBLIC_API_URL if BACKEND_URL has wrong port
+        const isDevelopment = process.env.NODE_ENV === 'development';
+        let baseUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:3001';
+        
+        // In development, if BACKEND_URL points to wrong port (3002), prefer NEXT_PUBLIC_API_URL
+        if (isDevelopment && process.env.BACKEND_URL) {
+            const backendUrl = process.env.BACKEND_URL;
+            const hasWrongPort = backendUrl.includes(':3002') || backendUrl.includes('localhost:3002');
+            if (hasWrongPort && process.env.NEXT_PUBLIC_API_URL) {
+                const correctUrl = process.env.NEXT_PUBLIC_API_URL;
+                console.warn(`[Automation Strategies] BACKEND_URL has wrong port (3002), using NEXT_PUBLIC_API_URL instead: ${correctUrl}`);
+                baseUrl = correctUrl;
+            }
+        }
         const url = `${baseUrl}/api/automation/strategies`;
         
         // Debug logging to help identify which env var is being used
@@ -17,6 +29,39 @@ export async function GET(request: NextRequest) {
             resolvedUrl: baseUrl,
             nodeEnv: process.env.NODE_ENV,
         });
+        
+        // First, check database health
+        const dbHealthUrl = `${baseUrl}/health/db`;
+        let dbHealthStatus = 'unknown';
+        let healthTimeout: NodeJS.Timeout | null = null;
+        try {
+            const healthController = new AbortController();
+            healthTimeout = setTimeout(() => healthController.abort(), 5000);
+            const healthRes = await fetch(dbHealthUrl, {
+                cache: 'no-store',
+                signal: healthController.signal,
+            });
+            if (healthTimeout) clearTimeout(healthTimeout);
+            if (healthRes.ok) {
+                const healthData = await healthRes.json();
+                dbHealthStatus = healthData.status || 'unknown';
+                console.log(`[Automation Strategies] Database health:`, healthData);
+            } else {
+                const healthText = await healthRes.text();
+                console.error(`[Automation Strategies] Database health check failed: ${healthRes.status} - ${healthText}`);
+                dbHealthStatus = 'unhealthy';
+            }
+        } catch (healthError: any) {
+            if (healthTimeout) clearTimeout(healthTimeout);
+            if (healthError.name === 'AbortError') {
+                console.warn(`[Automation Strategies] Database health check timed out`);
+                dbHealthStatus = 'timeout';
+            } else {
+                console.warn(`[Automation Strategies] Could not check database health:`, healthError.message);
+                dbHealthStatus = 'check_failed';
+            }
+        }
+        
         console.log(`[Automation Strategies] Fetching from: ${url}`);
         
         // Add timeout to prevent hanging requests
@@ -39,15 +84,26 @@ export async function GET(request: NextRequest) {
                 const errorText = await res.text().catch(() => 'Unable to read error response');
                 console.error(`[Automation Strategies] Backend returned ${res.status}. URL: ${url}`);
                 console.error(`[Automation Strategies] Error response: ${errorText.substring(0, 200)}`);
+                console.error(`[Automation Strategies] Database health status: ${dbHealthStatus}`);
+                
+                let errorMessage = `Backend returned ${res.status}.`;
+                if (dbHealthStatus === 'unhealthy' || dbHealthStatus === 'check_failed') {
+                    errorMessage += ' Database connection may be failing. Check backend logs in Render dashboard.';
+                } else if (dbHealthStatus === 'healthy') {
+                    errorMessage += ' Backend is reachable but endpoint failed. Check backend logs.';
+                } else {
+                    errorMessage += ' The backend service may be down, sleeping (free tier), or the BACKEND_URL is incorrect.';
+                }
                 
                 return NextResponse.json(
                     { 
                         error: 'Backend service unavailable', 
-                        message: `Backend returned ${res.status}. The backend service may be down, sleeping (free tier), or the BACKEND_URL is incorrect. Check Render dashboard → crypto-backend service status.`,
+                        message: errorMessage,
                         debug: {
                             backendUrl: baseUrl,
                             status: res.status,
                             errorResponse: errorText.substring(0, 200),
+                            databaseHealth: dbHealthStatus,
                         }
                     },
                     { status: 502 }
@@ -104,20 +160,38 @@ export async function GET(request: NextRequest) {
         
         if (isConnectionError) {
             // Check if it's a port mismatch issue
-            const portMismatch = attemptedUrl.includes(':3002') && error.code === 'ECONNREFUSED';
-            const errorMessage = portMismatch
-                ? `Backend connection failed: Trying to connect to port 3002, but backend runs on port 3001. Please check your .env.local file - set BACKEND_URL=http://127.0.0.1:3001 or remove the incorrect environment variable.`
-                : `Unable to connect to backend at ${attemptedUrl}. Make sure the backend is running on the correct port (default: 3001).`;
+            const portMismatch = attemptedUrl.includes(':3002');
+            const hasCorrectUrl = process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.includes(':3001');
+            
+            let errorMessage = `Unable to connect to backend at ${attemptedUrl}.`;
+            let fixHint = '';
+            
+            if (portMismatch) {
+                errorMessage = `Backend connection failed: Trying to connect to port 3002, but backend runs on port 3001.`;
+                if (hasCorrectUrl) {
+                    fixHint = `Your NEXT_PUBLIC_API_URL (${process.env.NEXT_PUBLIC_API_URL}) has the correct port. Fix your .env.local file:\n1. Remove or comment out BACKEND_URL=http://127.0.0.1:3002\n2. Or change it to: BACKEND_URL=http://127.0.0.1:3001\n3. Restart your Next.js dev server`;
+                } else {
+                    fixHint = `Fix your .env.local file:\n1. Set BACKEND_URL=http://127.0.0.1:3001 (not 3002)\n2. Or remove BACKEND_URL to use the default\n3. Restart your Next.js dev server`;
+                }
+            } else {
+                fixHint = 'Make sure the backend is running: cd backend && cargo run';
+            }
             
             return NextResponse.json(
                 { 
                     error: 'Backend connection failed', 
                     message: errorMessage,
+                    fix: fixHint,
                     debug: {
                         attemptedUrl,
                         errorCode: error.code,
                         errorMessage: error.message,
-                        hint: portMismatch ? 'Backend should run on port 3001. Check your .env.local file for incorrect BACKEND_URL or NEXT_PUBLIC_API_URL values.' : 'Ensure backend is running: cd backend && cargo run',
+                        envVars: {
+                            BACKEND_URL: process.env.BACKEND_URL || 'NOT SET',
+                            NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'NOT SET',
+                            NEXT_PUBLIC_BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL || 'NOT SET',
+                        },
+                        hint: portMismatch ? 'Backend should run on port 3001. Check your .env.local file.' : 'Ensure backend is running: cd backend && cargo run',
                     }
                 },
                 { status: 502 }

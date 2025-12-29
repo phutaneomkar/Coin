@@ -152,12 +152,59 @@ pub async fn get_strategies(
     // For simplicity, let's just fetch all running/recent strategies. 
     // In production, we MUST filter by user. Assuming single user/demo for now based on context.
     
+    println!("🔍 [get_strategies] Starting database query...");
+    
+    // First, test if database connection is alive
+    match sqlx::query("SELECT 1")
+        .fetch_one(&state.pool)
+        .await
+    {
+        Ok(_) => println!("✅ [get_strategies] Database connection is alive"),
+        Err(e) => {
+            println!("❌ [get_strategies] Database connection test failed: {}", e);
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("Database connection failed: {}", e)
+            ));
+        }
+    }
+    
+    // Check if strategies table exists
+    match sqlx::query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'strategies')")
+        .fetch_one(&state.pool)
+        .await
+    {
+        Ok(row) => {
+            let exists: bool = row.get(0);
+            if !exists {
+                println!("⚠️ [get_strategies] Strategies table does not exist!");
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Strategies table does not exist. Please run database migrations.".to_string()
+                ));
+            }
+            println!("✅ [get_strategies] Strategies table exists");
+        }
+        Err(e) => {
+            println!("❌ [get_strategies] Failed to check if strategies table exists: {}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to check table existence: {}", e)
+            ));
+        }
+    }
+    
+    println!("🔍 [get_strategies] Executing query to fetch strategies...");
     let strategies = sqlx::query_as::<_, StrategyDto>(
         "SELECT id, amount, profit_percentage, total_iterations, iterations_completed, duration_minutes, status, current_coin_id, created_at FROM strategies ORDER BY created_at DESC LIMIT 20"
     )
     .fetch_all(&state.pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+    .map_err(|e| {
+        println!("❌ [get_strategies] Query execution failed: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e))
+    })?;
 
+    println!("✅ [get_strategies] Successfully fetched {} strategies", strategies.len());
     Ok(Json(strategies))
 }
