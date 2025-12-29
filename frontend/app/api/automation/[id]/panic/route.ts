@@ -15,7 +15,18 @@ export async function POST(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const baseUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001';
+        // Smart URL resolution: In development, prefer NEXT_PUBLIC_API_URL if BACKEND_URL has wrong port
+        const isDevelopment = process.env.NODE_ENV === 'development';
+        let baseUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:3001';
+        
+        // In development, if BACKEND_URL points to wrong port (3002), prefer NEXT_PUBLIC_API_URL
+        if (isDevelopment && process.env.BACKEND_URL) {
+            const backendUrl = process.env.BACKEND_URL;
+            const hasWrongPort = backendUrl.includes(':3002') || backendUrl.includes('localhost:3002');
+            if (hasWrongPort && process.env.NEXT_PUBLIC_API_URL) {
+                baseUrl = process.env.NEXT_PUBLIC_API_URL;
+            }
+        }
         const res = await fetch(`${baseUrl}/api/automation/${id}/panic`, {
             method: "POST",
             headers: {

@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use sqlx::Row;
 use tower_http::cors::{Any, CorsLayer};
 
 mod config;
