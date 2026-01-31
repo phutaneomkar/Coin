@@ -37,7 +37,7 @@ export function LimitOrderChecker() {
             }
         };
 
-        const timeoutRef = { current: 0 as ReturnType<typeof setTimeout> };
+        const timeoutRef = { current: null as ReturnType<typeof setTimeout> | null };
         const schedule = () => {
             timeoutRef.current = setTimeout(() => {
                 checkLimits();
@@ -51,7 +51,7 @@ export function LimitOrderChecker() {
 
         return () => {
             clearTimeout(initialTimeout);
-            clearTimeout(timeoutRef.current);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
         };
     }, []);
 
