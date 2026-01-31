@@ -37,7 +37,12 @@ export default function CoinDetailPage() {
   useEffect(() => {
     if (!coinId) return;
     let isMounted = true;
-    const url = `/api/crypto/coin-detail?coinId=${encodeURIComponent(coinId)}`;
+
+    // Extract symbol: "syn" or "SYN-USDT" -> "SYN"; "B-SYN_USDT" -> "SYN"
+    const symbol = (coinId.includes('_')
+      ? coinId.replace(/^[A-Za-z]-/, '').split('_')[0]
+      : coinId.split('-')[0]
+    ).toUpperCase();
 
     const fetchCoinDetail = async (isInitial: boolean) => {
       try {
@@ -45,6 +50,7 @@ export default function CoinDetailPage() {
           setLoading(true);
           setError(null);
         }
+        const url = `/api/crypto/coin-detail?coinId=${encodeURIComponent(coinId)}&_=${Date.now()}`;
         const response = await fetch(url, { cache: 'no-store' });
         if (!isMounted) return;
 
@@ -88,30 +94,47 @@ export default function CoinDetailPage() {
       }
     };
 
-    fetchCoinDetail(true);
+    const fetchLTP = async () => {
+      try {
+        const res = await fetch(`/api/crypto/ltp?symbol=${encodeURIComponent(symbol)}&_=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+        });
+        if (!isMounted || !res.ok) return;
+        const { price } = await res.json();
+        if (typeof price === 'number' && price > 0) {
+          setCoinDetail(prev => prev ? { ...prev, current_price: price, last_updated: new Date().toISOString() } : null);
+        }
+      } catch {
+        // Silent - LTP is best-effort for real-time feel
+      }
+    };
 
-    const pollInterval = setInterval(() => fetchCoinDetail(false), 5000);
+    fetchCoinDetail(true).catch(() => {});
+    fetchLTP().catch(() => {});
+
+    const detailInterval = setInterval(() => fetchCoinDetail(false).catch(() => {}), 5000);
+    const ltpInterval = setInterval(() => fetchLTP().catch(() => {}), 200);
 
     const checkLimitOrders = async () => {
       try {
         const res = await fetch('/api/orders/check-limits', { method: 'GET' });
-        // Silent success - don't log unless there's an error
+        if (!isMounted) return;
         if (!res.ok && res.status !== 500) {
-          // Only log non-500 errors (500 might be DB unavailable, which we handle gracefully)
           console.warn('Limit order check returned non-OK:', res.status);
         }
-      } catch (error) {
-        // Silent fail - don't spam console or break the page
-        // The check-limits route already handles DB unavailable gracefully
+      } catch {
+        // Silent - network/DB unavailable, don't break the page
       }
     };
 
-    checkLimitOrders();
-    const limitInterval = setInterval(checkLimitOrders, 10000);
+    checkLimitOrders().catch(() => {});
+    const limitInterval = setInterval(() => checkLimitOrders().catch(() => {}), 10000);
 
     return () => {
       isMounted = false;
-      clearInterval(pollInterval);
+      clearInterval(detailInterval);
+      clearInterval(ltpInterval);
       clearInterval(limitInterval);
     };
   }, [coinId]);

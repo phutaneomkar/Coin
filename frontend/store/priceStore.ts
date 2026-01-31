@@ -51,29 +51,29 @@ export const usePriceStore = create<PriceStore>((set, get) => ({
 
   updatePrices: (newPrices) => {
     set((state) => {
-      // Only update if prices actually changed to avoid unnecessary re-renders
       let hasChanges = false;
       const updatedPrices = { ...state.prices };
-      
+
       newPrices.forEach((price) => {
         const existing = updatedPrices[price.id];
         const merged = {
           ...price,
           price_change_percentage_3h: price.price_change_percentage_3h ?? existing?.price_change_percentage_3h,
         };
-        if (!existing ||
-            existing.current_price !== merged.current_price ||
-            existing.price_change_percentage_24h !== merged.price_change_percentage_24h ||
-            existing.price_change_percentage_3h !== merged.price_change_percentage_3h) {
+        // Update if new data or price/percent changed (use small epsilon for float comparison)
+        const priceChanged = existing
+          ? Math.abs((existing.current_price || 0) - (merged.current_price || 0)) > 1e-10
+          : true;
+        const pctChanged = existing
+          ? Math.abs((existing.price_change_percentage_24h || 0) - (merged.price_change_percentage_24h || 0)) > 1e-6
+          : true;
+        if (priceChanged || pctChanged || !existing) {
           updatedPrices[price.id] = merged;
           hasChanges = true;
         }
       });
 
-      // Only update state if there were actual changes
-      if (!hasChanges) {
-        return state;
-      }
+      if (!hasChanges) return state;
 
       return {
         prices: updatedPrices,

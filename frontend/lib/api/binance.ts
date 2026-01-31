@@ -244,6 +244,75 @@ export async function fetchBinanceTickers(maxRetries: number = 3): Promise<Binan
   throw lastError || new Error('Failed to fetch Binance tickers');
 }
 
+const BINANCE_FUTURES_URL = 'https://fapi.binance.com';
+
+/** Binance Futures 24h ticker item */
+export interface BinanceFuturesTicker {
+  symbol: string;
+  lastPrice: string;
+  priceChangePercent: string;
+  highPrice: string;
+  lowPrice: string;
+  volume: string;
+  quoteVolume: string;
+}
+
+/**
+ * Fetch ALL Binance Futures 24h tickers - one call, matches CoinDCX futures (B-SYMBOL_USDT)
+ */
+export async function fetchBinanceFuturesAllTickers(): Promise<BinanceFuturesTicker[]> {
+  try {
+    const res = await fetch(`${BINANCE_FUTURES_URL}/fapi/v1/ticker/24hr`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch Binance Futures last price - fast fallback when CoinDCX orderbook unavailable
+ * B-SYMBOL_USDT on CoinDCX = Binance Futures
+ */
+export async function fetchBinanceFuturesPrice(symbol: string): Promise<number | null> {
+  const futuresSymbol = `${symbol.toUpperCase()}USDT`;
+  try {
+    const res = await fetch(`${BINANCE_FUTURES_URL}/fapi/v1/ticker/price?symbol=${futuresSymbol}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const price = parseFloat(data?.price);
+    return Number.isFinite(price) && price > 0 ? price : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch Binance Futures 24h ticker - matches CoinDCX futures (B-SYMBOL_USDT uses Binance)
+ * Returns priceChangePercent or null if not available
+ */
+export async function fetchBinanceFuturesTicker24h(symbol: string): Promise<{ priceChangePercent: number } | null> {
+  const futuresSymbol = `${symbol.toUpperCase()}USDT`;
+  try {
+    const res = await fetch(`${BINANCE_FUTURES_URL}/fapi/v1/ticker/24hr?symbol=${futuresSymbol}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const pct = parseFloat(data?.priceChangePercent);
+    return Number.isFinite(pct) ? { priceChangePercent: pct } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fetch exchange information (all trading pairs)
  */

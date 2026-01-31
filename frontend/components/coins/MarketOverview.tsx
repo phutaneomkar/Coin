@@ -1,6 +1,7 @@
 'use client';
 
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import { formatPrice } from '../../lib/formatPrice';
 
 interface CoinDetail {
   id: string;
@@ -24,15 +25,6 @@ export function MarketOverview({ coin }: MarketOverviewProps) {
   const isPositive = coin.price_change_percentage_24h >= 0;
   const ChangeIcon = isPositive ? TrendingUp : TrendingDown;
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 8,
-    }).format(price);
-  };
-
   const formatFullDecimal = (num: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -48,13 +40,13 @@ export function MarketOverview({ coin }: MarketOverviewProps) {
         {/* Left Side - Price Info */}
         <div className="flex-1">
           <div className="flex items-center gap-4 mb-4">
-            <h1 className="text-3xl font-bold text-white">
+            <h1 className={`text-3xl font-bold ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
               {formatPrice(coin.current_price)}
             </h1>
             <div className={`flex items-center gap-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
               <ChangeIcon className="w-5 h-5" />
               <span className="text-lg font-semibold">
-                {Math.abs(coin.price_change_percentage_24h).toFixed(4)}%
+                {isPositive ? '+' : ''}{coin.price_change_percentage_24h.toFixed(2)}%
               </span>
             </div>
           </div>
@@ -88,7 +80,7 @@ export function MarketOverview({ coin }: MarketOverviewProps) {
           Trading Pair: <span className="text-white font-medium">{coin.symbol} • USD</span>
         </p>
         <p className="text-xs text-gray-500 mt-1">
-          Live prices from CoinDCX (refreshed every 5s)
+          Real-time from CoinDCX Futures (B-{coin.symbol}_USDT) • price every 200ms • Last: {new Date(coin.last_updated).toLocaleTimeString()}
         </p>
       </div>
     </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { getBinanceSymbol } from '../../lib/api/binance';
+import { formatPrice } from '../../lib/formatPrice';
 
 interface TradeHistoryProps {
   coinId: string;
@@ -65,15 +66,6 @@ export function TradeHistory({ coinId, coinSymbol }: TradeHistoryProps) {
     const interval = setInterval(fetchTradeHistory, 3000);
     return () => clearInterval(interval);
   }, [coinId]);
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 2,
-      minimumFractionDigits: 2,
-    }).format(price);
-  };
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);

@@ -8,6 +8,7 @@ import { LoadingSpinner } from '../../components/shared/LoadingSpinner';
 import { X, RefreshCw } from 'lucide-react';
 import { OrderType, OrderMode } from '../../types';
 import { DEFAULT_USER_ID } from '../../lib/auth-utils';
+import { formatPrice } from '../../lib/formatPrice';
 
 interface TradingModalProps {
   isOpen: boolean;
@@ -363,15 +364,6 @@ export function TradingModal({
   };
 
   if (!isOpen) return null;
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 8,
-    }).format(price);
-  };
 
   // Tax/fee rate (0.1% = 0.001)
   const TAX_RATE = 0.001; // 0.1% trading fee

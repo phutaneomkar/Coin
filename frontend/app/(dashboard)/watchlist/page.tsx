@@ -10,6 +10,7 @@ import { Plus, X, Search, TrendingUp, TrendingDown, ArrowUpDown } from 'lucide-r
 import { toast } from 'react-hot-toast';
 import { useCryptoPrices } from '../../../hooks/useCryptoPrices';
 import { DEFAULT_USER_ID } from '../../../lib/auth-utils';
+import { formatPrice } from '../../../lib/formatPrice';
 
 type SortField = 'name' | 'price' | 'change';
 type SortDirection = 'asc' | 'desc';
@@ -296,15 +297,6 @@ export default function WatchlistPage() {
     </button>
   );
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 8,
-    }).format(price);
-  };
-
   const formatLargeNumber = (num: number) => {
     if (num >= 1e9) {
       return `$${(num / 1e9).toFixed(2)}B`;
@@ -386,7 +378,7 @@ export default function WatchlistPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-white font-mono font-medium">
+                      <div className={`font-mono font-medium ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
                         {price ? formatPrice(price.current_price) : 'Loading...'}
                       </div>
                       {price && (
@@ -503,7 +495,7 @@ export default function WatchlistPage() {
                           </div>
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-right">
-                          <div className="text-sm font-medium text-white">
+                          <div className={`text-sm font-medium ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
                             {formatPrice(price.current_price)}
                           </div>
                         </td>

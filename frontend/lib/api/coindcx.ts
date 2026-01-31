@@ -2,6 +2,18 @@ export interface CoinDCXFuturesInstrument {
     pair: string;
 }
 
+export interface CoinDCXFuturesTicker {
+    symbol: string;        // e.g. "B-SYN_USDT"
+    last_price: string;    // e.g. "0.09930"
+    bid: string;           // best bid
+    ask: string;           // best ask
+    change_24h: string;    // 24h change percent
+    high_24h: string;
+    low_24h: string;
+    volume_24h: string;    // quantity
+    timestamp: number;
+}
+
 export interface CoinDCXTicker {
     market: string;           // e.g., "SYNUSDT"
     change_24_hour: string;   // e.g., "-0.12"
@@ -19,8 +31,10 @@ export interface CoinDCXTicker {
  * Endpoint: https://api.coindcx.com/exchange/ticker
  */
 export async function fetchCoinDCXTickers(): Promise<CoinDCXTicker[]> {
-    const response = await fetch('https://api.coindcx.com/exchange/ticker', {
+    const url = `https://api.coindcx.com/exchange/ticker?_=${Date.now()}`;
+    const response = await fetch(url, {
         cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
     });
 
     if (!response.ok) {
@@ -37,49 +51,124 @@ export async function fetchCoinDCXTickers(): Promise<CoinDCXTicker[]> {
 export async function fetchCoinDCXTickerBySymbol(symbol: string): Promise<CoinDCXTicker | null> {
     const tickers = await fetchCoinDCXTickers();
     const upperSymbol = symbol.toUpperCase();
-    
+
     // Try USDT pair first (most common)
     const usdtMarket = `${upperSymbol}USDT`;
     let ticker = tickers.find(t => t.market === usdtMarket);
-    
+
     if (!ticker) {
         // Try INR pair
         const inrMarket = `${upperSymbol}INR`;
         ticker = tickers.find(t => t.market === inrMarket);
     }
-    
+
     if (!ticker) {
         // Try partial match
         ticker = tickers.find(t => t.market.startsWith(upperSymbol));
     }
-    
+
     return ticker || null;
 }
 
+/** Futures data from public.coindcx.com (matches coindcx.com/futures page) */
+export interface CoinDCXFuturesData {
+    pair: string;           // e.g. "B-SYN_USDT"
+    last_price: number;     // from last trade
+    bid: number;            // best bid
+    ask: number;            // best ask
+    high_24h: number;
+    low_24h: number;
+    volume_24h: number;
+    change_24_hour?: number; // percent
+}
+
+const PUBLIC_COINDCX = 'https://public.coindcx.com';
+
+/** CoinDCX orderbook format: { bids: { "price": "qty" }, asks: { "price": "qty" } } */
+export interface CoinDCXOrderBook {
+    bids: Record<string, string>;
+    asks: Record<string, string>;
+}
+
 /**
- * Fetch CoinDCX futures ticker
- * Endpoint: https://api.coindcx.com/exchange/v1/derivatives/futures/data/ticker
+ * Fetch orderbook from CoinDCX (B-SYMBOL_USDT) - same source as coindcx.com/futures
  */
-export async function fetchCoinDCXFuturesTicker(symbol: string): Promise<any | null> {
+export async function fetchCoinDCXOrderbook(symbol: string): Promise<CoinDCXOrderBook | null> {
+    const pair = `B-${symbol.toUpperCase()}_USDT`;
     try {
-        const response = await fetch('https://api.coindcx.com/exchange/v1/derivatives/futures/data/ticker', {
+        const res = await fetch(`${PUBLIC_COINDCX}/market_data/orderbook?pair=${pair}&_=${Date.now()}`, {
             cache: 'no-store',
+            headers: { 'Cache-Control': 'no-cache' },
         });
-
-        if (!response.ok) {
-            return null;
-        }
-
-        const tickers = await response.json();
-        const upperSymbol = symbol.toUpperCase();
-        
-        // Futures pairs are like "B-SYN_USDT"
-        const futuresPair = `B-${upperSymbol}_USDT`;
-        return tickers.find((t: any) => t.pair === futuresPair) || null;
+        if (!res.ok) return null;
+        return await res.json();
     } catch {
         return null;
     }
 }
+
+/**
+ * Fetch CoinDCX futures/perpetual data (B-SYMBOL_USDT)
+ * Uses public.coindcx.com - matches prices on coindcx.com/futures
+ */
+export async function fetchCoinDCXFuturesData(symbol: string): Promise<CoinDCXFuturesData | null> {
+    const upperSymbol = symbol.toUpperCase();
+    const pair = `B-${upperSymbol}_USDT`;
+
+    try {
+        // Orderbook is the reliable futures source. Trade history for B-SYN_USDT returns spot data (wrong).
+        const [orderbookRes, candlesRes] = await Promise.all([
+            fetch(`${PUBLIC_COINDCX}/market_data/orderbook?pair=${pair}`, { cache: 'no-store' }),
+            fetch(`${PUBLIC_COINDCX}/market_data/candles?pair=${pair}&interval=1h&limit=24`, { cache: 'no-store' }),
+        ]);
+
+        if (!orderbookRes.ok) return null;
+
+        const orderbook = await orderbookRes.json();
+        const bids = orderbook.bids || {};
+        const asks = orderbook.asks || {};
+        const bidPrices = Object.keys(bids).map(Number).filter(Boolean).sort((a, b) => b - a);
+        const askPrices = Object.keys(asks).map(Number).filter(Boolean).sort((a, b) => a - b);
+        const bestBid = bidPrices[0] ?? 0;
+        const bestAsk = askPrices[0] ?? 0;
+        // Use mid-price from orderbook - matches coindcx.com/futures display
+        const lastPrice = (bestBid && bestAsk) ? (bestBid + bestAsk) / 2 : bestBid || bestAsk;
+
+        let high24h = 0;
+        let low24h = 0;
+        let volume24h = 0;
+        let change24h: number | undefined;
+
+        if (candlesRes.ok) {
+            const candles = await candlesRes.json();
+            if (Array.isArray(candles) && candles.length > 0) {
+                const lows = candles.map((c: { low?: number }) => c.low ?? 0).filter((v: number) => v > 0);
+                high24h = Math.max(...candles.map((c: { high?: number }) => c.high ?? 0));
+                low24h = lows.length > 0 ? Math.min(...lows) : lastPrice;
+                volume24h = candles.reduce((s: number, c: { volume?: number }) => s + (c.volume ?? 0), 0);
+                const oldest = candles[candles.length - 1];
+                const open24h = oldest?.open ?? lastPrice;
+                if (open24h > 0) {
+                    change24h = ((lastPrice - open24h) / open24h) * 100;
+                }
+            }
+        }
+
+        return {
+            pair,
+            last_price: lastPrice,
+            bid: bestBid,
+            ask: bestAsk,
+            high_24h: high24h || lastPrice,
+            low_24h: low24h || lastPrice,
+            volume_24h: volume24h,
+            change_24_hour: change24h,
+        };
+    } catch {
+        return null;
+    }
+}
+
 
 /**
  * Fetch CoinDCX Active Futures Instruments
@@ -132,5 +221,28 @@ export async function fetchCoinDCXFuturesMarkets(): Promise<Set<string>> {
     } catch (error) {
         console.error('Failed to fetch CoinDCX futures markets:', error);
         return new Set<string>(); // Return empty set on error to avoid breaking the app (or allow all?)
+    }
+}
+
+/**
+ * Fetch all CoinDCX futures tickers (B- pairs)
+ * Endpoint: https://api.coindcx.com/exchange/v1/derivatives/futures/data/tickers
+ * This is the source for real-time LTP shown on coindcx.com/futures
+ */
+export async function fetchCoinDCXFuturesTickers(): Promise<CoinDCXFuturesTicker[]> {
+    try {
+        const response = await fetch('https://api.coindcx.com/exchange/v1/derivatives/futures/data/tickers', {
+            cache: 'no-store',
+            headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+        });
+
+        if (!response.ok) {
+            return [];
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Failed to fetch CoinDCX futures tickers:', error);
+        return [];
     }
 }

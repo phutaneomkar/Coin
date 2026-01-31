@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { getBinanceSymbol } from '../../lib/api/binance';
+import { formatPrice } from '../../lib/formatPrice';
 
 interface OrderBookProps {
   coinId: string;
@@ -83,15 +84,6 @@ export function OrderBook({ coinId, coinSymbol, currentPrice }: OrderBookProps) 
     const interval = setInterval(fetchOrderBook, 3000);
     return () => clearInterval(interval);
   }, [coinId]);
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 2,
-      minimumFractionDigits: 2,
-    }).format(price);
-  };
 
   const formatQuantity = (qty: number) => {
     return qty.toFixed(4);

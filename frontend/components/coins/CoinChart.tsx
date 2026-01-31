@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
+import { formatPrice } from '../../lib/formatPrice';
 
 type Timeframe = '1h' | '4h' | '1d' | '7d' | '1m' | '3m' | '1y';
 
@@ -191,13 +192,9 @@ export function CoinChart({ coinId, coinSymbol }: CoinChartProps) {
     return () => { if (timer) clearTimeout(timer); };
   }, [timeframe, coinId]);
 
-  const formatPrice = (price: number) => {
+  const formatPriceDisplay = (price: number | null | undefined) => {
     if (price === undefined || price === null) return '---';
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 2,
-    }).format(price);
+    return formatPrice(price);
   };
 
   const formatValue = (val: number) => {
@@ -248,31 +245,31 @@ export function CoinChart({ coinId, coinSymbol }: CoinChartProps) {
               <div className="flex gap-1">
                 <span className="text-[#787b86]">O</span>
                 <span className={displayCandle.open > displayCandle.close ? 'text-[#ef5350]' : 'text-[#26a69a]'}>
-                  {formatPrice(displayCandle.open)}
+                  {formatPriceDisplay(displayCandle.open)}
                 </span>
               </div>
               <div className="flex gap-1">
                 <span className="text-[#787b86]">H</span>
                 <span className={displayCandle.open > displayCandle.close ? 'text-[#ef5350]' : 'text-[#26a69a]'}>
-                  {formatPrice(displayCandle.high)}
+                  {formatPriceDisplay(displayCandle.high)}
                 </span>
               </div>
               <div className="flex gap-1">
                 <span className="text-[#787b86]">L</span>
                 <span className={displayCandle.open > displayCandle.close ? 'text-[#ef5350]' : 'text-[#26a69a]'}>
-                  {formatPrice(displayCandle.low)}
+                  {formatPriceDisplay(displayCandle.low)}
                 </span>
               </div>
               <div className="flex gap-1">
                 <span className="text-[#787b86]">C</span>
                 <span className={displayCandle.open > displayCandle.close ? 'text-[#ef5350]' : 'text-[#26a69a]'}>
-                  {formatPrice(displayCandle.close)}
+                  {formatPriceDisplay(displayCandle.close)}
                 </span>
               </div>
               <div className="flex gap-1">
                 <span className="text-[#787b86]">Change</span>
                 <span className={displayCandle.change >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}>
-                  {displayCandle.change >= 0 ? '+' : ''}{formatPrice(displayCandle.change)} ({displayCandle.changePercent.toFixed(2)}%)
+                  {displayCandle.change >= 0 ? '+' : ''}{formatPriceDisplay(displayCandle.change)} ({displayCandle.changePercent.toFixed(2)}%)
                 </span>
               </div>
               <div className="flex gap-1">

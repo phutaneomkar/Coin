@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchCoinDCXTickerBySymbol, fetchCoinDCXFuturesTicker } from '../../../../lib/api/coindcx';
+import { fetchCoinDCXTickerBySymbol, fetchCoinDCXFuturesData, fetchCoinDCXFuturesTickers, CoinDCXFuturesTicker } from '../../../../lib/api/coindcx';
+import { fetchBinanceFuturesTicker24h } from '../../../../lib/api/binance';
 import type { CoinDetail } from '../../../../types';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,40 +17,32 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Decode the coinId and extract symbol
     const decodedCoinId = decodeURIComponent(coinId);
-    // coinId might be like "synapse-2" or "syn" or "SYN"
     const symbol = decodedCoinId.split('-')[0].toUpperCase();
 
-    // Try CoinDCX futures ticker first (more accurate for futures trading)
-    let futuresTicker = await fetchCoinDCXFuturesTicker(symbol);
-    
-    // If futures not found, try spot ticker
-    let spotTicker = await fetchCoinDCXTickerBySymbol(symbol);
+    // Use bulk futures tickers for real-time LTP
+    const [futuresTickers, spotTicker, binanceFutures] = await Promise.all([
+      fetchCoinDCXFuturesTickers(),
+      fetchCoinDCXTickerBySymbol(symbol),
+      fetchBinanceFuturesTicker24h(symbol),
+    ]);
 
-    if (!futuresTicker && !spotTicker) {
-      return NextResponse.json(
-        { error: 'Coin not found', details: `No data available for ${symbol} on CoinDCX.` },
-        { status: 404 }
-      );
-    }
+    const ticker = futuresTickers.find((t: CoinDCXFuturesTicker) => t.symbol === `B-${symbol}_USDT`);
 
-    // Use futures data if available (more accurate for your use case), fallback to spot
     let currentPrice: number;
     let high24h: number;
     let low24h: number;
     let volume24h: number;
     let priceChangePercent24h: number;
 
-    if (futuresTicker) {
-      // Futures ticker structure
-      currentPrice = parseFloat(futuresTicker.mark_price || futuresTicker.last_price) || 0;
-      high24h = parseFloat(futuresTicker.high) || 0;
-      low24h = parseFloat(futuresTicker.low) || 0;
-      volume24h = parseFloat(futuresTicker.volume) || 0;
-      priceChangePercent24h = parseFloat(futuresTicker.change_24_hour) || 0;
+    if (ticker && parseFloat(ticker.last_price) > 0) {
+      currentPrice = parseFloat(ticker.last_price);
+      high24h = parseFloat(ticker.high_24h) || currentPrice;
+      low24h = parseFloat(ticker.low_24h) || currentPrice;
+      volume24h = parseFloat(ticker.volume_24h) || 0;
+      // B-SYMBOL_USDT uses Binance - Binance Futures 24h % matches CoinDCX futures
+      priceChangePercent24h = binanceFutures?.priceChangePercent ?? parseFloat(ticker.change_24h) ?? (spotTicker ? parseFloat(spotTicker.change_24_hour) || 0 : 0);
     } else if (spotTicker) {
-      // Spot ticker structure
       currentPrice = parseFloat(spotTicker.last_price) || 0;
       high24h = parseFloat(spotTicker.high) || 0;
       low24h = parseFloat(spotTicker.low) || 0;
@@ -75,6 +70,7 @@ export async function GET(request: NextRequest) {
       low_24h: low24h,
       last_updated: new Date().toISOString(),
     };
+
 
     return NextResponse.json(detail, {
       status: 200,

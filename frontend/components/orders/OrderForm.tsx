@@ -8,6 +8,7 @@ import { toast } from 'react-hot-toast';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { OrderType, OrderMode } from '../../types';
 import { DEFAULT_USER_ID } from '../../lib/auth-utils';
+import { formatPrice } from '../../lib/formatPrice';
 
 interface OrderFormProps {
   onOrderPlaced: () => void;
@@ -267,15 +268,6 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
     }
   };
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 2,
-      minimumFractionDigits: 2,
-    }).format(price);
-  };
-
   const popularCoins = Object.values(prices).slice(0, 10);
 
   // Calculate estimated totals
@@ -360,7 +352,7 @@ export function OrderForm({ onOrderPlaced }: OrderFormProps) {
             <div className="mt-2 flex justify-between items-center bg-gray-700/50 p-3 rounded-lg border border-gray-600">
               <span className="text-sm text-gray-400">Current Market Price</span>
               <span className="text-lg font-bold text-white">
-                ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatPrice(currentPrice)}
               </span>
             </div>
           )}
