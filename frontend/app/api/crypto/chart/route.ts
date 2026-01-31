@@ -52,6 +52,8 @@ export async function GET(request: NextRequest) {
     // Calculate OHLC for the selected timeframe from the klines
     // For the selected timeframe, we need the first candle's open, max high, min low, and last candle's close
     let ohlc = null;
+    let candlesticks: any[] = [];
+
     if (klines.length > 0) {
       const firstCandle = klines[0];
       const lastCandle = klines[klines.length - 1];
@@ -69,6 +71,16 @@ export async function GET(request: NextRequest) {
         close: parseFloat(lastCandle[4]), // Last candle's close
         volume: totalVolume, // Sum of all volumes
       };
+
+      // Map klines to candlestick objects
+      candlesticks = klines.map(k => ({
+        timestamp: k[0],
+        open: parseFloat(k[1]),
+        high: parseFloat(k[2]),
+        low: parseFloat(k[3]),
+        close: parseFloat(k[4]),
+        volume: parseFloat(k[5]),
+      }));
     }
 
     const data = {
@@ -76,6 +88,7 @@ export async function GET(request: NextRequest) {
       market_caps: prices, // Use prices as market caps (Binance doesn't provide market cap)
       total_volumes: volumes,
       ohlc, // Add OHLC data for the timeframe
+      candlesticks, // Add detailed candlestick data
     };
 
     return NextResponse.json(data, {

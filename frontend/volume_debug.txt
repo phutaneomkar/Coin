@@ -1,0 +1,16 @@
+Total Tickers: 1009
+Sample Ticker 0:
+{
+  "market": "STEEMINR",
+  "change_24_hour": "9.651",
+  "high": "5.987",
+  "low": "5.45",
+  "volume": "2164.775980486",
+  "last_price": "5.9760000000",
+  "bid": "5.6930000000",
+  "ask": "5.9390000000",
+  "timestamp": 1769851895
+}
+No ticker starting with B- found.
+Total Instruments: 411
+Sample Instrument: B-LISTA_USDT

@@ -164,12 +164,54 @@ async function executeOrder(
   }
 }
 
+/** True if the error is due to DB/unreachable (e.g. wrong Supabase URL or network). */
+function isDatabaseUnreachable(error: unknown): boolean {
+  const msg =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message?: string }).message)
+        : String(error);
+  const cause = error instanceof Error && (error as Error & { cause?: unknown }).cause != null
+    ? String((error as Error & { cause?: unknown }).cause)
+    : '';
+  const combined = `${msg} ${cause}`.toLowerCase();
+  return (
+    combined.includes('enotfound') ||
+    combined.includes('getaddrinfo') ||
+    combined.includes('fetch failed') ||
+    combined.includes('econnrefused') ||
+    combined.includes('network') ||
+    combined.includes('supabase.co')
+  );
+}
+
+/** 200 response when DB is unavailable so the app does not 500. */
+function okDbUnavailable() {
+  return NextResponse.json({
+    success: true,
+    message: 'Database unavailable',
+    executed: 0,
+    logs: [] as string[],
+  });
+}
+
 /**
  * Check and execute pending limit orders when price conditions are met
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
+    let supabase;
+    try {
+      supabase = await createClient();
+    } catch (createError) {
+      if (isDatabaseUnreachable(createError)) {
+        console.warn('Supabase unreachable (check NEXT_PUBLIC_SUPABASE_URL):', createError instanceof Error ? createError.message : createError);
+        return okDbUnavailable();
+      }
+      throw createError;
+    }
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -187,14 +229,30 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all pending limit orders
-    const { data: pendingOrders, error: ordersError } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('order_status', 'pending')
-      .eq('order_mode', 'limit')
-      .not('price_per_unit', 'is', null);
+    let pendingOrders: any[] | null = null;
+    let ordersError: any = null;
+    try {
+      const result = await supabase
+        .from('orders')
+        .select('*')
+        .eq('order_status', 'pending')
+        .eq('order_mode', 'limit')
+        .not('price_per_unit', 'is', null);
+      pendingOrders = result.data;
+      ordersError = result.error;
+    } catch (fetchError) {
+      if (isDatabaseUnreachable(fetchError)) {
+        console.warn('Supabase unreachable (check NEXT_PUBLIC_SUPABASE_URL):', fetchError instanceof Error ? fetchError.message : fetchError);
+        return okDbUnavailable();
+      }
+      throw fetchError;
+    }
 
     if (ordersError) {
+      if (isDatabaseUnreachable(ordersError)) {
+        console.warn('Supabase unreachable (check NEXT_PUBLIC_SUPABASE_URL):', ordersError);
+        return okDbUnavailable();
+      }
       console.error('Error fetching pending orders:', ordersError);
       return NextResponse.json(
         { error: 'Failed to fetch pending orders' },
@@ -307,6 +365,10 @@ export async function GET(request: NextRequest) {
       logs: logs // Return logs for debugging
     });
   } catch (error) {
+    if (isDatabaseUnreachable(error)) {
+      console.warn('Supabase unreachable (check NEXT_PUBLIC_SUPABASE_URL):', error instanceof Error ? error.message : error);
+      return okDbUnavailable();
+    }
     console.error('API Error in /api/orders/check-limits:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Internal server error' },

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { fetchBinanceTickers, fetchBinanceExchangeInfo, getCoinIdFromSymbol } from '../../../../lib/api/binance';
+import { fetchBinanceTickers, fetchBinanceExchangeInfo, getCoinIdFromSymbol, fetch3hChangePercent } from '../../../../lib/api/binance';
+import { fetchCoinDCXFuturesMarkets } from '../../../../lib/api/coindcx';
 import { CryptoPrice } from '../../../../types';
 
 // Use mainnet for market data to get all available coins
@@ -19,8 +20,14 @@ interface ExchangeInfoCache {
   timestamp: number;
 }
 
+interface FuturesInfoCache {
+  coins: Set<string>;
+  timestamp: number;
+}
+
 let cache: CacheEntry | null = null;
 let exchangeInfoCache: ExchangeInfoCache | null = null;
+let futuresInfoCache: FuturesInfoCache | null = null;
 const CACHE_TTL = 5000; // Cache for 5 seconds
 const EXCHANGE_INFO_CACHE_TTL = 300000; // Cache exchange info for 5 minutes (it doesn't change often)
 
@@ -87,6 +94,26 @@ export async function GET() {
       }
     }
 
+    // Fetch CoinDCX Futures markets to filter for Future-listed coins
+    let coindcxFuturesCoins = new Set<string>();
+    if (futuresInfoCache && (now - futuresInfoCache.timestamp) < EXCHANGE_INFO_CACHE_TTL) {
+      coindcxFuturesCoins = futuresInfoCache.coins;
+    } else {
+      try {
+        const coins = await fetchCoinDCXFuturesMarkets();
+        coindcxFuturesCoins = coins;
+        futuresInfoCache = {
+          coins: coins,
+          timestamp: now
+        };
+      } catch (error) {
+        console.warn('Failed to fetch CoinDCX futures info:', error);
+        if (futuresInfoCache) {
+          coindcxFuturesCoins = futuresInfoCache.coins;
+        }
+      }
+    }
+
     // Create a map of symbol -> status for quick lookup
     const symbolStatusMap = new Map<string, { status: string; isSpotTradingAllowed: boolean }>();
     if (exchangeInfo) {
@@ -107,10 +134,18 @@ export async function GET() {
           return false;
         }
 
+        const coinSymbol = ticker.symbol.replace('USDT', '');
+
+        // FILTER: Must be listed on CoinDCX Futures
+        // Check if the BASE token (e.g. BTC) is in our CoinDCX futures list
+        if (coindcxFuturesCoins.size > 0 && !coindcxFuturesCoins.has(coinSymbol)) {
+          return false;
+        }
+
         // Check if coin is banned by CoinDCX
-        const coinSymbol = ticker.symbol.replace('USDT', '').toLowerCase();
-        const coinId = getCoinIdFromSymbol(ticker.symbol)?.toLowerCase() || coinSymbol;
-        if (COINDCX_BANNED_COINS.has(coinId) || COINDCX_BANNED_COINS.has(coinSymbol) || COINDCX_BANNED_COINS.has(ticker.symbol.toLowerCase())) {
+        const coinSymbolLower = coinSymbol.toLowerCase();
+        const coinId = getCoinIdFromSymbol(ticker.symbol)?.toLowerCase() || coinSymbolLower;
+        if (COINDCX_BANNED_COINS.has(coinId) || COINDCX_BANNED_COINS.has(coinSymbolLower) || COINDCX_BANNED_COINS.has(ticker.symbol.toLowerCase())) {
           return false;
         }
 
@@ -162,22 +197,42 @@ export async function GET() {
           market_cap: marketCap,
           volume_24h: volume24h,
           last_updated: new Date().toISOString(),
+          binanceSymbol: ticker.symbol,
         };
       })
 
       .sort((a, b) => b.market_cap - a.market_cap); // Sort by market cap
 
-    if (prices.length === 0) {
+    // Fetch 3h change % in batches (Binance rate limit)
+    type PriceWithSymbol = CryptoPrice & { binanceSymbol: string };
+    const BATCH_SIZE = 15;
+    const pricesWith3h: CryptoPrice[] = [];
+    for (let i = 0; i < prices.length; i += BATCH_SIZE) {
+      const batch = prices.slice(i, i + BATCH_SIZE) as PriceWithSymbol[];
+      const results = await Promise.all(
+        batch.map(async (p) => {
+          const threeH = await fetch3hChangePercent(p.binanceSymbol, p.current_price);
+          const { binanceSymbol: _, ...rest } = p;
+          return {
+            ...rest,
+            ...(threeH != null && { price_change_percentage_3h: threeH }),
+          };
+        })
+      );
+      pricesWith3h.push(...results);
+    }
+
+    if (pricesWith3h.length === 0) {
       throw new Error('No prices fetched from Binance');
     }
 
     // Update cache
     cache = {
-      data: prices,
+      data: pricesWith3h,
       timestamp: Date.now(),
     };
 
-    return NextResponse.json(prices, {
+    return NextResponse.json(pricesWith3h, {
       status: 200,
       headers: {
         'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=10', // Cache for 5 seconds
@@ -225,3 +280,4 @@ export async function GET() {
     );
   }
 }
+

@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const supabase = createClient();
   const itemsPerPage = 10;
+  const MAX_COINS = 100; // Only show up to 100 coins (criteria: 3h change > 5%)
 
   // Fetch watchlist on mount
   useEffect(() => {
@@ -107,7 +108,10 @@ export default function DashboardPage() {
   // Pre-compute sorted arrays and top/bottom sets for filters (memoized)
   const filterSets = useMemo(() => {
     const validCoins = pricesList.filter(coin =>
-      coin && typeof coin.current_price === 'number' && coin.current_price >= 0.01
+      coin &&
+      typeof coin.current_price === 'number' &&
+      coin.current_price >= 0.01 &&
+      Math.abs(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) > 5
     );
 
     const sortedByPrice = [...validCoins].sort((a, b) => (b.current_price || 0) - (a.current_price || 0));
@@ -135,6 +139,9 @@ export default function DashboardPage() {
     let filtered = pricesList.filter((coin) => {
       // Strictly filter out coins with 0 or invalid price, or those that would display as $0.00 (< 0.01)
       if (!coin || typeof coin.current_price !== 'number' || coin.current_price < 0.01) return false;
+      // Only show coins with 3h change more than 5% (absolute); fallback to 24h if 3h missing
+      const changePct = coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0;
+      if (Math.abs(changePct) <= 5) return false;
 
       // Apply search filter first
       if (query) {
@@ -149,9 +156,9 @@ export default function DashboardPage() {
       // Apply high/low filters using pre-computed sets
       switch (filterType) {
         case 'top_gainers':
-          return (coin.price_change_percentage_24h || 0) > 0;
+          return (coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) > 0;
         case 'top_losers':
-          return (coin.price_change_percentage_24h || 0) < 0;
+          return (coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) < 0;
         case 'high_price':
           return filterSets.highPriceSet.has(coin.id);
         case 'low_price':
@@ -181,8 +188,8 @@ export default function DashboardPage() {
           bValue = b.current_price || 0;
           break;
         case 'change':
-          aValue = a.price_change_percentage_24h || 0;
-          bValue = b.price_change_percentage_24h || 0;
+          aValue = a.price_change_percentage_3h ?? a.price_change_percentage_24h ?? 0;
+          bValue = b.price_change_percentage_3h ?? b.price_change_percentage_24h ?? 0;
           break;
         case 'market_cap':
           aValue = a.market_cap || 0;
@@ -205,7 +212,7 @@ export default function DashboardPage() {
         : (bValue as number) - (aValue as number);
     });
 
-    return filtered;
+    return filtered.slice(0, MAX_COINS);
   }, [pricesList, searchQuery, sortField, sortDirection, filterType, filterSets]);
 
   // Pagination
@@ -263,8 +270,8 @@ export default function DashboardPage() {
     <tr onClick={onRowClick} className="cursor-pointer hover:bg-gray-700">
       <td className="px-4 py-4 text-left whitespace-nowrap">{coin.name} ({coin.symbol})</td>
       <td className="px-4 py-4 text-right whitespace-nowrap">${coin.current_price?.toFixed(2)}</td>
-      <td className={`px-4 py-4 text-right whitespace-nowrap ${coin.price_change_percentage_24h >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-        {coin.price_change_percentage_24h >= 0 ? '+' : ''}{coin.price_change_percentage_24h?.toFixed(2)}%
+      <td className={`px-4 py-4 text-right whitespace-nowrap ${(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+        {(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) >= 0 ? '+' : ''}{(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h)?.toFixed(2)}%
       </td>
       <td className="px-4 py-4 text-right whitespace-nowrap hidden md:table-cell">${coin.market_cap?.toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
       <td className="px-4 py-4 text-right whitespace-nowrap hidden lg:table-cell">${coin.volume_24h?.toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
@@ -285,7 +292,12 @@ export default function DashboardPage() {
     <div>
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h1 className="text-3xl font-bold text-white">Market Overview</h1>
+          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+            Market Overview
+            <span className="text-sm font-normal text-gray-400 bg-gray-800 px-3 py-1 rounded-full border border-gray-700">
+              Total Coins: {filteredAndSortedCoins.length}
+            </span>
+          </h1>
 
           {/* Search */}
           <div className="relative flex-1 sm:max-w-md">
@@ -354,10 +366,10 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <div className="text-white font-mono font-medium">${coin.current_price?.toFixed(2)}</div>
-                    <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1 ${coin.price_change_percentage_24h >= 0 ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                    <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1 ${(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) >= 0 ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
                       }`}>
-                      {coin.price_change_percentage_24h >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      {Math.abs(coin.price_change_percentage_24h || 0).toFixed(2)}%
+                      {(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                      {Math.abs(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0).toFixed(2)}%
                     </div>
                   </div>
                 </div>
@@ -372,8 +384,8 @@ export default function DashboardPage() {
                       toggleWatchlist(coin.id, coin.symbol);
                     }}
                     className={`p-2 rounded-full transition-colors ${watchlistIds.has(coin.id)
-                        ? 'bg-yellow-500/10 text-yellow-500'
-                        : 'bg-gray-700 text-gray-400'
+                      ? 'bg-yellow-500/10 text-yellow-500'
+                      : 'bg-gray-700 text-gray-400'
                       }`}
                   >
                     <Star className={`w-4 h-4 ${watchlistIds.has(coin.id) ? 'fill-current' : ''}`} />
@@ -400,7 +412,7 @@ export default function DashboardPage() {
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">
                     <div className="flex items-center justify-end">
-                      <SortButton field="change">24h Change</SortButton>
+                      <SortButton field="change">3h Change</SortButton>
                     </div>
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider hidden md:table-cell">

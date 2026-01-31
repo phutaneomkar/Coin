@@ -198,7 +198,7 @@ export function getCoinIdFromSymbol(symbol: string): string | null {
  */
 export async function fetchBinanceTickers(maxRetries: number = 3): Promise<BinanceTicker[]> {
   let lastError: Error | null = null;
-  
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const response = await fetch(`${BINANCE_API_BASE}/v3/ticker/24hr`, {
@@ -209,7 +209,7 @@ export async function fetchBinanceTickers(maxRetries: number = 3): Promise<Binan
       if (response.status === 429 || response.status === 418) {
         const retryAfter = parseInt(response.headers.get('Retry-After') || '0') || Math.pow(2, attempt);
         const waitTime = retryAfter * 1000; // Convert to milliseconds
-        
+
         if (attempt < maxRetries - 1) {
           // Wait before retrying with exponential backoff
           await new Promise(resolve => setTimeout(resolve, waitTime));
@@ -226,21 +226,21 @@ export async function fetchBinanceTickers(maxRetries: number = 3): Promise<Binan
       return await response.json();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Unknown error');
-      
+
       // If it's a rate limit error and we have retries left, continue
       if (lastError.message.includes('Rate limit') && attempt < maxRetries - 1) {
         const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
         await new Promise(resolve => setTimeout(resolve, waitTime));
         continue;
       }
-      
+
       // For non-rate-limit errors or final attempt, throw
       if (attempt === maxRetries - 1) {
         throw lastError;
       }
     }
   }
-  
+
   throw lastError || new Error('Failed to fetch Binance tickers');
 }
 
@@ -279,6 +279,25 @@ export async function fetchBinanceTicker(symbol: string): Promise<BinanceTicker>
   }
 
   return response.json();
+}
+
+/**
+ * Fetch 3h price change % for a symbol (last 3 hours).
+ * Uses klines: previous candle close = price 3h ago, current price passed in.
+ */
+export async function fetch3hChangePercent(
+  symbol: string,
+  currentPrice: number
+): Promise<number | null> {
+  try {
+    const klines = await fetchBinanceKlines(symbol, '3h', 2);
+    if (!klines || klines.length < 1) return null;
+    const close3hAgo = parseFloat(klines[0][4]);
+    if (!close3hAgo || close3hAgo <= 0) return null;
+    return ((currentPrice - close3hAgo) / close3hAgo) * 100;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -397,6 +416,24 @@ export async function fetchBinanceRecentTrades(
 
   if (!response.ok) {
     throw new Error(`Binance API error: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch Futures exchange info to identify coins listed on Futures
+ */
+export async function fetchBinanceFuturesExchangeInfo(): Promise<{
+  symbols: Array<{ symbol: string; status: string; }>;
+}> {
+  // Binance Futures API
+  const response = await fetch('https://fapi.binance.com/fapi/v1/exchangeInfo', {
+    next: { revalidate: 3600 }, // Cache for 1 hour
+  });
+
+  if (!response.ok) {
+    throw new Error(`Binance Futures API error: ${response.statusText}`);
   }
 
   return response.json();

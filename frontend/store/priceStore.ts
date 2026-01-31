@@ -57,11 +57,15 @@ export const usePriceStore = create<PriceStore>((set, get) => ({
       
       newPrices.forEach((price) => {
         const existing = updatedPrices[price.id];
-        // Check if price actually changed
-        if (!existing || 
-            existing.current_price !== price.current_price ||
-            existing.price_change_percentage_24h !== price.price_change_percentage_24h) {
-          updatedPrices[price.id] = price;
+        const merged = {
+          ...price,
+          price_change_percentage_3h: price.price_change_percentage_3h ?? existing?.price_change_percentage_3h,
+        };
+        if (!existing ||
+            existing.current_price !== merged.current_price ||
+            existing.price_change_percentage_24h !== merged.price_change_percentage_24h ||
+            existing.price_change_percentage_3h !== merged.price_change_percentage_3h) {
+          updatedPrices[price.id] = merged;
           hasChanges = true;
         }
       });

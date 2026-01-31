@@ -1,0 +1,5 @@
+Threshold > $0: 0 pairs -> 0 unique coins
+Threshold > $1000: 0 pairs -> 0 unique coins
+Threshold > $10000: 0 pairs -> 0 unique coins
+Threshold > $50000: 0 pairs -> 0 unique coins
+Threshold > $100000: 0 pairs -> 0 unique coins

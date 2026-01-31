@@ -19,6 +19,7 @@ export interface CryptoPrice {
   current_price: number;
   price_change_24h: number;
   price_change_percentage_24h: number;
+  price_change_percentage_3h?: number;
   market_cap: number;
   volume_24h: number;
   last_updated: string;

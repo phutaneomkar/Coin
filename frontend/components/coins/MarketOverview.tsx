@@ -25,23 +25,23 @@ export function MarketOverview({ coin }: MarketOverviewProps) {
   const ChangeIcon = isPositive ? TrendingUp : TrendingDown;
 
   const formatPrice = (price: number) => {
+    const decimals =
+      price < 0.0001 ? 8 : price < 0.01 ? 6 : price < 1 ? 4 : 2;
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      maximumFractionDigits: 2,
-      minimumFractionDigits: 2,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
     }).format(price);
   };
 
-  const formatLargeNumber = (num: number) => {
-    if (num >= 1000000000) {
-      return `$${(num / 1000000000).toFixed(2)}B`;
-    } else if (num >= 1000000) {
-      return `$${(num / 1000000).toFixed(2)}M`;
-    } else if (num >= 1000) {
-      return `$${(num / 1000).toFixed(2)}K`;
-    }
-    return formatPrice(num);
+  const formatFullDecimal = (num: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(num);
   };
 
   return (
@@ -56,7 +56,7 @@ export function MarketOverview({ coin }: MarketOverviewProps) {
             <div className={`flex items-center gap-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
               <ChangeIcon className="w-5 h-5" />
               <span className="text-lg font-semibold">
-                {Math.abs(coin.price_change_percentage_24h).toFixed(3)}%
+                {Math.abs(coin.price_change_percentage_24h).toFixed(4)}%
               </span>
             </div>
           </div>
@@ -73,11 +73,11 @@ export function MarketOverview({ coin }: MarketOverviewProps) {
             </div>
             <div>
               <p className="text-sm text-gray-400 mb-1">24h Volume</p>
-              <p className="text-white font-semibold">{formatLargeNumber(coin.volume_24h)}</p>
+              <p className="text-white font-semibold">{formatFullDecimal(coin.volume_24h)}</p>
             </div>
             <div>
               <p className="text-sm text-gray-400 mb-1">Market Cap</p>
-              <p className="text-white font-semibold">{formatLargeNumber(coin.market_cap)}</p>
+              <p className="text-white font-semibold">{formatFullDecimal(coin.market_cap)}</p>
             </div>
           </div>
         </div>

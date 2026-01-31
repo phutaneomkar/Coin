@@ -6,13 +6,9 @@ import { createClient } from '../../lib/supabase/client';
 import { toast } from 'react-hot-toast';
 import {
   LogOut,
-  User,
   TrendingUp,
-  List,
-  Zap,
   Menu,
-  X,
-  Star
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -35,10 +31,6 @@ export function Sidebar() {
 
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: TrendingUp },
-    { href: '/orders', label: 'Orders', icon: List },
-    { href: '/watchlist', label: 'Watchlist', icon: Star },
-    { href: '/automation', label: 'Automation', icon: Zap },
-    { href: '/profile', label: 'Profile', icon: User },
   ];
 
   return (
