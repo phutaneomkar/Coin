@@ -35,54 +35,35 @@ export default function CoinDetailPage() {
   const [selectedTab, setSelectedTab] = useState<'orderbook' | 'trades'>('orderbook');
 
   useEffect(() => {
-    const fetchCoinDetail = async () => {
+    if (!coinId) return;
+    let isMounted = true;
+    const url = `/api/crypto/coin-detail?coinId=${encodeURIComponent(coinId)}`;
+
+    const fetchCoinDetail = async (isInitial: boolean) => {
       try {
-        setLoading(true);
-        setError(null);
-
-        if (!coinId) {
-          throw new Error('Coin ID is required');
+        if (isInitial) {
+          setLoading(true);
+          setError(null);
         }
-
-        // Use API route to avoid CORS issues
-        const cacheKey = `/api/crypto/coin-detail?coinId=${encodeURIComponent(coinId)}`;
-        const response = await fetch(cacheKey, {
-          next: { revalidate: 60 }, // Cache for 1 minute
-        });
+        const response = await fetch(url, { cache: 'no-store' });
+        if (!isMounted) return;
 
         if (!response.ok) {
-          // Read error data once
+          const text = await response.text();
           let errorData: any = {};
           try {
-            const text = await response.text();
-            if (text) {
-              errorData = JSON.parse(text);
-            }
-          } catch (e) {
-            // If parsing fails, use empty object
-          }
-
-          // Handle rate limiting
+            if (text) errorData = JSON.parse(text);
+          } catch {}
           if (response.status === 429) {
-            const retryAfter = errorData.retryAfter || 60;
-            throw new Error(`Rate limit exceeded. Please wait ${retryAfter} seconds and try again.`);
+            throw new Error(`Rate limit exceeded. Please wait ${errorData.retryAfter || 60} seconds.`);
           }
-
-          // Don't show technical error details to users
-          if (response.status === 404) {
-            throw new Error('Coin not found');
-          }
-
+          if (response.status === 404) throw new Error('Coin not found');
           throw new Error('Failed to load coin details. Please try again later.');
         }
 
         const data = await response.json();
+        if (!isMounted || !data?.id) return;
 
-        if (!data || !data.id) {
-          throw new Error('Invalid coin data received');
-        }
-
-        // Data is already in USD format from Binance API
         const detail: CoinDetail = {
           id: data.id,
           symbol: data.symbol?.toUpperCase() || '',
@@ -99,38 +80,40 @@ export default function CoinDetailPage() {
 
         setCoinDetail(detail);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load coin details');
+        if (isMounted && isInitial) {
+          setError(err instanceof Error ? err.message : 'Failed to load coin details');
+        }
       } finally {
-        setLoading(false);
+        if (isMounted && isInitial) setLoading(false);
       }
     };
 
-    if (coinId) {
-      fetchCoinDetail();
-    }
+    fetchCoinDetail(true);
 
-    // Check and execute limit orders for this coin every 10 seconds
+    const pollInterval = setInterval(() => fetchCoinDetail(false), 5000);
+
     const checkLimitOrders = async () => {
       try {
-        await fetch('/api/orders/check-limits', { method: 'GET' });
+        const res = await fetch('/api/orders/check-limits', { method: 'GET' });
+        // Silent success - don't log unless there's an error
+        if (!res.ok && res.status !== 500) {
+          // Only log non-500 errors (500 might be DB unavailable, which we handle gracefully)
+          console.warn('Limit order check returned non-OK:', res.status);
+        }
       } catch (error) {
-        console.error('Error checking limit orders:', error);
+        // Silent fail - don't spam console or break the page
+        // The check-limits route already handles DB unavailable gracefully
       }
     };
 
-    // Initial check
-    if (coinId) {
-      checkLimitOrders();
-    }
+    checkLimitOrders();
+    const limitInterval = setInterval(checkLimitOrders, 10000);
 
-    // Set up interval to check every 10 seconds
-    const interval = setInterval(() => {
-      if (coinId) {
-        checkLimitOrders();
-      }
-    }, 10000);
-
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+      clearInterval(limitInterval);
+    };
   }, [coinId]);
 
   // Show skeleton/optimistic UI instead of blocking spinner

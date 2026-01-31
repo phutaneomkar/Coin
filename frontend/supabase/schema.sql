@@ -77,40 +77,6 @@ CREATE TABLE IF NOT EXISTS holdings (
 -- Indexes for holdings table
 CREATE INDEX IF NOT EXISTS idx_user_holdings ON holdings(user_id);
 
--- Automation scripts table
-CREATE TABLE IF NOT EXISTS automation_scripts (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  script_name TEXT NOT NULL,
-  script_code TEXT NOT NULL,
-  script_type TEXT NOT NULL CHECK (script_type IN ('price_trigger', 'scheduled', 'indicator', 'custom')),
-  is_active BOOLEAN DEFAULT FALSE,
-  config JSONB DEFAULT '{}',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
-  last_executed_at TIMESTAMP WITH TIME ZONE
-);
-
--- Indexes for automation_scripts table
-CREATE INDEX IF NOT EXISTS idx_user_scripts ON automation_scripts(user_id, is_active);
-
--- Script executions table
-CREATE TABLE IF NOT EXISTS script_executions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  script_id UUID NOT NULL REFERENCES automation_scripts(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  execution_status TEXT NOT NULL CHECK (execution_status IN ('success', 'failed', 'running')),
-  orders_placed INTEGER DEFAULT 0,
-  error_message TEXT,
-  execution_log JSONB DEFAULT '{}',
-  started_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
-  completed_at TIMESTAMP WITH TIME ZONE
-);
-
--- Indexes for script_executions table
-CREATE INDEX IF NOT EXISTS idx_script_executions ON script_executions(script_id, started_at);
-CREATE INDEX IF NOT EXISTS idx_user_executions ON script_executions(user_id, started_at);
-
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -122,9 +88,6 @@ $$ LANGUAGE plpgsql;
 
 -- Triggers for updated_at
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_automation_scripts_updated_at BEFORE UPDATE ON automation_scripts
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Function to automatically create profile on user signup
@@ -150,8 +113,6 @@ ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE holdings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE automation_scripts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE script_executions ENABLE ROW LEVEL SECURITY;
 
 -- Profiles policies
 CREATE POLICY "Users can view own profile" ON profiles
@@ -199,24 +160,3 @@ CREATE POLICY "Users can update own holdings" ON holdings
 
 CREATE POLICY "Users can delete own holdings" ON holdings
   FOR DELETE USING (auth.uid() = user_id);
-
--- Automation scripts policies
-CREATE POLICY "Users can view own scripts" ON automation_scripts
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own scripts" ON automation_scripts
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own scripts" ON automation_scripts
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own scripts" ON automation_scripts
-  FOR DELETE USING (auth.uid() = user_id);
-
--- Script executions policies
-CREATE POLICY "Users can view own script executions" ON script_executions
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own script executions" ON script_executions
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-

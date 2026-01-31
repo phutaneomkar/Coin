@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchBinanceTicker, getBinanceSymbol } from '../../../../lib/api/binance';
+import { fetchCoinDCXTickerBySymbol, fetchCoinDCXFuturesTicker } from '../../../../lib/api/coindcx';
 import type { CoinDetail } from '../../../../types';
 
 export async function GET(request: NextRequest) {
@@ -14,84 +14,79 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Decode the coinId in case it was URL encoded
+    // Decode the coinId and extract symbol
     const decodedCoinId = decodeURIComponent(coinId);
+    // coinId might be like "synapse-2" or "syn" or "SYN"
+    const symbol = decodedCoinId.split('-')[0].toUpperCase();
 
-    // Get Binance symbol for this coin
-    const binanceSymbol = getBinanceSymbol(decodedCoinId);
+    // Try CoinDCX futures ticker first (more accurate for futures trading)
+    let futuresTicker = await fetchCoinDCXFuturesTicker(symbol);
+    
+    // If futures not found, try spot ticker
+    let spotTicker = await fetchCoinDCXTickerBySymbol(symbol);
 
-    if (!binanceSymbol) {
+    if (!futuresTicker && !spotTicker) {
       return NextResponse.json(
-        { error: 'Coin not supported on Binance', details: `Trading pair not found for ${decodedCoinId}` },
+        { error: 'Coin not found', details: `No data available for ${symbol} on CoinDCX.` },
         { status: 404 }
       );
     }
 
-    // Fetch ticker data from Binance
-    let ticker;
-    try {
-      ticker = await fetchBinanceTicker(binanceSymbol);
-    } catch (tickerError) {
-      // If symbol is invalid (400 error), return 404 instead of 500
-      const errorMsg = tickerError instanceof Error ? tickerError.message : 'Unknown error';
-      if (errorMsg.includes('Invalid symbol') || errorMsg.includes('400')) {
-        return NextResponse.json(
-          { error: 'Coin not found', details: `Trading pair ${binanceSymbol} is not available on Binance.` },
-          { status: 404 }
-        );
-      }
-      // Re-throw other errors to be handled by outer catch
-      throw tickerError;
-    }
+    // Use futures data if available (more accurate for your use case), fallback to spot
+    let currentPrice: number;
+    let high24h: number;
+    let low24h: number;
+    let volume24h: number;
+    let priceChangePercent24h: number;
 
-    // Validate ticker data exists
-    if (!ticker || !ticker.lastPrice) {
+    if (futuresTicker) {
+      // Futures ticker structure
+      currentPrice = parseFloat(futuresTicker.mark_price || futuresTicker.last_price) || 0;
+      high24h = parseFloat(futuresTicker.high) || 0;
+      low24h = parseFloat(futuresTicker.low) || 0;
+      volume24h = parseFloat(futuresTicker.volume) || 0;
+      priceChangePercent24h = parseFloat(futuresTicker.change_24_hour) || 0;
+    } else if (spotTicker) {
+      // Spot ticker structure
+      currentPrice = parseFloat(spotTicker.last_price) || 0;
+      high24h = parseFloat(spotTicker.high) || 0;
+      low24h = parseFloat(spotTicker.low) || 0;
+      volume24h = parseFloat(spotTicker.volume) || 0;
+      priceChangePercent24h = parseFloat(spotTicker.change_24_hour) || 0;
+    } else {
       return NextResponse.json(
-        { error: 'Coin not found', details: `No data available for ${binanceSymbol} on Binance.` },
+        { error: 'Coin not found', details: `No data available for ${symbol} on CoinDCX.` },
         { status: 404 }
       );
     }
 
-    // Convert Binance ticker to our CoinDetail format
-    const currentPrice = parseFloat(ticker.lastPrice) || 0;
-    const priceChange24h = parseFloat(ticker.priceChange) || 0;
-    const priceChangePercent24h = parseFloat(ticker.priceChangePercent) || 0;
-    const high24h = parseFloat(ticker.highPrice) || 0;
-    const low24h = parseFloat(ticker.lowPrice) || 0;
-    const volume24h = parseFloat(ticker.quoteVolume) || 0;
-    const openPrice = parseFloat(ticker.openPrice) || 0;
+    const priceChange24h = currentPrice * (priceChangePercent24h / 100);
 
     const detail: CoinDetail = {
       id: decodedCoinId,
-      symbol: binanceSymbol.replace('USDT', '').toUpperCase(),
-      name: binanceSymbol.replace('USDT', ''), // Will be improved
+      symbol: symbol,
+      name: symbol,
       current_price: currentPrice,
       price_change_24h: priceChange24h,
       price_change_percentage_24h: priceChangePercent24h,
-      market_cap: 0, // Binance doesn't provide market cap directly
+      market_cap: 0,
       volume_24h: volume24h,
       high_24h: high24h,
       low_24h: low24h,
-      last_updated: new Date(ticker.closeTime || Date.now()).toISOString(),
+      last_updated: new Date().toISOString(),
     };
 
     return NextResponse.json(detail, {
       status: 200,
       headers: {
-        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120', // Cache for 1 minute
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
         'Content-Type': 'application/json',
       },
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-    // Handle 404 from Binance
-    if (errorMessage.includes('Invalid symbol') || errorMessage.includes('404')) {
-      return NextResponse.json(
-        { error: 'Coin not found', details: 'The requested coin is not available on Binance.' },
-        { status: 404 }
-      );
-    }
 
     return NextResponse.json(
       {

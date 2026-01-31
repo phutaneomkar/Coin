@@ -297,19 +297,11 @@ export default function WatchlistPage() {
   );
 
   const formatPrice = (price: number) => {
-    if (price < 0.01 && price > 0) {
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 6,
-        maximumFractionDigits: 8,
-      }).format(price);
-    }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 8,
     }).format(price);
   };
 

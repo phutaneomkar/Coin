@@ -15,6 +15,12 @@ type SortField = 'name' | 'price' | 'change' | 'market_cap' | 'volume';
 type SortDirection = 'asc' | 'desc';
 type FilterType = 'all' | 'top_gainers' | 'top_losers' | 'high_price' | 'low_price' | 'high_mcap' | 'low_mcap';
 
+/** Format price with full precision (all decimals, up to 8) like CoinDCX */
+function formatPrice(price: number | undefined | null): string {
+  if (price == null || typeof price !== 'number') return '—';
+  return price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 8 });
+}
+
 export default function DashboardPage() {
   useCryptoPrices();
   const { prices, isLoading, error } = usePriceStore();
@@ -269,7 +275,7 @@ export default function DashboardPage() {
   }) => (
     <tr onClick={onRowClick} className="cursor-pointer hover:bg-gray-700">
       <td className="px-4 py-4 text-left whitespace-nowrap">{coin.name} ({coin.symbol})</td>
-      <td className="px-4 py-4 text-right whitespace-nowrap">${coin.current_price?.toFixed(2)}</td>
+      <td className="px-4 py-4 text-right whitespace-nowrap">${formatPrice(coin.current_price)}</td>
       <td className={`px-4 py-4 text-right whitespace-nowrap ${(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
         {(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) >= 0 ? '+' : ''}{(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h)?.toFixed(2)}%
       </td>
@@ -365,7 +371,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-white font-mono font-medium">${coin.current_price?.toFixed(2)}</div>
+                    <div className="text-white font-mono font-medium">${formatPrice(coin.current_price)}</div>
                     <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1 ${(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) >= 0 ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
                       }`}>
                       {(coin.price_change_percentage_3h ?? coin.price_change_percentage_24h ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
@@ -412,7 +418,7 @@ export default function DashboardPage() {
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">
                     <div className="flex items-center justify-end">
-                      <SortButton field="change">3h Change</SortButton>
+                      <SortButton field="change">24h Change</SortButton>
                     </div>
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider hidden md:table-cell">

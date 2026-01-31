@@ -76,37 +76,6 @@ export type Database = {
         Insert: Omit<Database['public']['Tables']['holdings']['Row'], 'id' | 'last_updated'>;
         Update: Partial<Database['public']['Tables']['holdings']['Insert']>;
       };
-      automation_scripts: {
-        Row: {
-          id: string;
-          user_id: string;
-          script_name: string;
-          script_code: string;
-          script_type: string;
-          is_active: boolean;
-          config: Record<string, any>;
-          created_at: string;
-          updated_at: string;
-          last_executed_at: string | null;
-        };
-        Insert: Omit<Database['public']['Tables']['automation_scripts']['Row'], 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Database['public']['Tables']['automation_scripts']['Insert']>;
-      };
-      script_executions: {
-        Row: {
-          id: string;
-          script_id: string;
-          user_id: string;
-          execution_status: string;
-          orders_placed: number;
-          error_message: string | null;
-          execution_log: Record<string, any>;
-          started_at: string;
-          completed_at: string | null;
-        };
-        Insert: Omit<Database['public']['Tables']['script_executions']['Row'], 'id' | 'started_at'>;
-        Update: Partial<Database['public']['Tables']['script_executions']['Insert']>;
-      };
     };
   };
 };

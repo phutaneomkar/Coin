@@ -25,13 +25,11 @@ export function MarketOverview({ coin }: MarketOverviewProps) {
   const ChangeIcon = isPositive ? TrendingUp : TrendingDown;
 
   const formatPrice = (price: number) => {
-    const decimals =
-      price < 0.0001 ? 8 : price < 0.01 ? 6 : price < 1 ? 4 : 2;
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 8,
     }).format(price);
   };
 
@@ -88,6 +86,9 @@ export function MarketOverview({ coin }: MarketOverviewProps) {
       <div className="mt-4 pt-4 border-t border-gray-700">
         <p className="text-sm text-gray-400">
           Trading Pair: <span className="text-white font-medium">{coin.symbol} • USD</span>
+        </p>
+        <p className="text-xs text-gray-500 mt-1">
+          Live prices from CoinDCX (refreshed every 5s)
         </p>
       </div>
     </div>

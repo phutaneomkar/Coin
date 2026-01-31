@@ -77,10 +77,10 @@ The application uses the following Supabase tables:
 - `orders` - Buy/sell orders (market and limit)
 - `transactions` - Completed transactions
 - `holdings` - User's cryptocurrency holdings
-- `automation_scripts` - Trading automation scripts
-- `script_executions` - Script execution logs
 
-Run the SQL schema from `supabase/schema.sql` in your Supabase SQL Editor.
+Automation uses the backend `strategies` table (see `backend/automation.sql`).
+
+Run the SQL schema from `supabase/schema.sql` in your Supabase SQL Editor. If you have an existing DB with old automation tables, run `supabase/migrations/20250131000000_drop_unwanted_tables.sql` to remove them.
 
 ## API Configuration
 
