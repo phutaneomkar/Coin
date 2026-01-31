@@ -11,6 +11,7 @@ import {
   X
 } from 'lucide-react';
 import Link from 'next/link';
+import { SupabaseStatus } from '../shared/SupabaseStatus';
 
 export function Sidebar() {
   const router = useRouter();
@@ -102,6 +103,9 @@ export function Sidebar() {
               );
             })}
           </nav>
+
+          {/* Supabase connection status */}
+          <SupabaseStatus />
 
           {/* Logout button */}
           <div className="p-4 border-t border-gray-700">
